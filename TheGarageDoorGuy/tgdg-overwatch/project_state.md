@@ -50,14 +50,36 @@ The original `tgdg-zip-dispatcher` repo's code did not survive its deletion — 
 - Brand colors (black `#16140f`, cream `#f4f2ea`, orange `#e97530`) — correct from the start this time
 - No seed data yet — needs at least one `Technician` + `ZipCoverage` row to show anything real
 
+## Next up, in priority order (set 2026-10-03)
+Deliberately sequenced this way: real data before more features, so nothing further gets built against fake seed data.
+
+**1. Real HCP integration** — the actual next session, starts here:
+- Confirm the HCP account is on the **MAX plan** (blocks everything else below — still unconfirmed as of this writing)
+- Generate a real `HCP_API_KEY`, enable the Webhooks app in HCP for `HCP_WEBHOOK_SIGNING_SECRET`
+- Stand up a reachable webhook endpoint — `ngrok http 3000` for local testing (free), pointed at from HCP's webhook settings; a real Vercel deployment can come later
+- Build the **backfill script** (doesn't exist yet): calls `listEmployees()`/`listJobs()` from `hcp-client.ts` and upserts into `Technician`/`Appointment` — this is real new code, not configuration
+- Wire up the **webhook receiver's actual upsert logic** — it currently only verifies the signature and logs the event (see `src/app/api/webhooks/housecall/route.ts`'s TODO)
+- Goal: test with fake customers calling in, against real technicians and real scheduled jobs already in HCP
+
+**2. Residential vs. commercial step** — small, ~20 minutes once reached:
+- `Technician` gets two new booleans: `servesResidential`, `servesCommercial`
+- `zip-coverage` API route takes a `type` param, filters on the matching boolean
+- UI: one two-button screen between zip entry and tech selection (UX's note: two large tap targets, nothing else on screen, feels like one continuous motion with the zip step rather than a separate page)
+
+**3. HCP schedule context + call stacking by location** — real phase-2 feature, not a quick add:
+- `Appointment` needs a location field (zip code at minimum, full address better) — doesn't exist yet, since HCP data isn't flowing in for real until item 1 is done
+- v1, zero-cost: treat same-zip-code as "nearby" for stacking purposes — crude but free
+- v2, real drive-time: would need a mapping API (Google Distance Matrix, Mapbox, etc.) — these have free tiers but aren't free at volume, so this is the one place the zero-cost plan has a real asterisk if pursued
+- Goal: show the dispatcher what job is scheduled immediately before/after a candidate slot, so they can judge "today's 2pm slot is good, it's 8 minutes from an existing job" vs. a slot that leaves a big unnecessary drive
+
 ## Open questions / not yet decided
 - Multi-monitor behavior — window positioning currently only considers the primary display
 - Whether to eventually pursue a signed/notarized build ($99/year) for wider distribution, or stay unsigned indefinitely
-- HCP MAX plan status — still unconfirmed from earlier sessions
 
 ## Log
 - 2026-09-29: Original architecture (webhook+backfill hybrid, `zip_coverage` table) designed for what started as a customer-facing booking app. Repo `tgdg-zip-dispatcher` scaffolded, Neon DB provisioned, first migration run successfully.
 - 2026-09-30: Built the real availability engine and Prisma-backed API routes; pivoted from customer-facing booking to an internal dispatcher console; added a Chrome/Edge side panel extension; found and fixed a theme-variable bug that had silently broken all brand colors.
 - 2026-09-30 (later): Retired the single-purpose app model in favor of **TGDG Overwatch** as a cross-browser extension shell. Verified real cross-browser and cost constraints via research. Old repo retired; new repo `tgdg-overwatch` created; initial three-browser-extension scaffold built (Chrome/Edge + Firefox manifests, shared panel UI, build script).
 - 2026-10-03: Retired the browser-extension approach entirely in favor of a small **Electron desktop app** that docks itself to the screen edge regardless of browser — solves Safari for free as a side effect and collapses three manifest variants into one codebase. Rebuilt the panel UI (icon rail, settings, iframe) on top of Electron's main/preload/renderer model with JSON-file storage. Old extension-specific files (manifests, per-browser build script) removed.
-- 2026-10-03 (later): Confirmed the old `tgdg-zip-dispatcher` repo's code did not survive. Rebuilt the dispatch console from scratch as `tools/dispatch-console/` inside this same repo (monorepo decision made and closed, not left open) — full Prisma schema, availability engine, HCP client/webhook verification, and the branded three-tier UI, all verified clean (tsc + eslint, zero errors) and with the color-theme bug fixed from the start rather than patched in after.
+- 2026-10-03 (later): Confirmed the old `tgdg-zip-dispatcher` repo's code did not survive. Rebuilt the dispatch console from scratch as `tools/dispatch-console/` inside this same repo (monorepo decision made and closed, not left open) — full Prisma schema, availability engine, HCP client/webhook verification, and the branded three-tier UI, all verified clean (tsc + eslint, zero errors) and with the color-theme bug fixed from the start rather than patched in after. Hit real local-environment setup friction getting the repo properly synced (Finder drag silently dropped hidden files like `.gitignore`/`.env.example`, plus an empty-folder merge issue) — resolved via a full local reset (fresh `git clone`, terminal-only extraction).
+- 2026-10-03 (end of session): Seeded a demo technician + zip coverage row and confirmed the full stack working end to end — Electron shell loading the dispatch console, real Prisma/Neon queries, availability engine producing real slots. Scoped and prioritized next steps: real HCP integration first (before more UI features), then the residential/commercial step, then HCP-schedule-aware call stacking by location as a phase-2 item. See "Next up" above.
