@@ -30,23 +30,27 @@ Trade-off, stated plainly: it's no longer "lives in the browser's toolbar" — i
 - The existing dispatcher console backend (Next.js + Prisma + Neon) is the first tool's content, loaded by URL — that work isn't thrown away, it's just one iframe's worth of content now instead of the whole product
 
 ## Repo
-Single repo: **`tgdg-overwatch`**. (Earlier `tgdg-zip-dispatcher` repo was retired; its Next.js/Prisma dispatcher-console code needs to be re-confirmed/rebuilt separately — see open questions.)
+Single repo: **`tgdg-overwatch`**, structured as a monorepo:
+- Repo root — the Electron shell (`src/main.js`, `src/preload.js`, panel UI)
+- `tools/dispatch-console/` — the first docked tool, a standalone Next.js app with its own `package.json`, run independently (`npm run dev` inside that folder) and deployed separately later (e.g. Vercel, with its "Root Directory" set to `tools/dispatch-console`)
+
+The original `tgdg-zip-dispatcher` repo's code did not survive its deletion — the dispatch console was fully rebuilt from scratch on 2026-10-03 (see Log), reconstructed accurately since the working logic was still available from earlier in the build process, including the color-theme bug fix applied from the start this time rather than patched after.
 
 ## Task split
 - **Lead dev (full-stack):** Electron main process, window positioning/docking behavior, the tool registry, storage/IPC, packaging via `electron-builder`.
 - **UI/UX specialist:** panel layout, tool-switcher design (currently a horizontal icon rail — chosen as the simplest thing that scales to more tools later), the visual language for an always-on shell (calm/utility-grade, not a one-time booking flow).
 - **Junior dev:** per-tool UI work (starting with the existing dispatcher console), Vercel deployment of that console, eventually an admin screen for registering new tool URLs.
 
-## Carried over from tgdg-zip-dispatcher (conceptually still true, code status unconfirmed)
+## Dispatch console (rebuilt, now at `tools/dispatch-console/`)
 - HCP account must be on the MAX plan for API + webhooks
-- Webhook + backfill hybrid pattern for availability data
+- Webhook + backfill hybrid pattern for availability data (webhook receiver verifies signatures and logs events; actual DB upsert on receipt still TODO)
 - Data model: `Technician`, `ZipCoverage`, `Appointment`, `WebhookEvent`
-- Same-day / next-day / dynamic-later-window availability logic (`availability.ts`)
-- Brand colors (black `#16140f`, cream `#f4f2ea`, orange `#e97530`)
+- Same-day / next-day / dynamic-later-window availability logic (`availability.ts`), wired to real Prisma queries in both API routes
+- Tech auto-suggest ranking (soonest opening: today > tomorrow > later)
+- Brand colors (black `#16140f`, cream `#f4f2ea`, orange `#e97530`) — correct from the start this time
+- No seed data yet — needs at least one `Technician` + `ZipCoverage` row to show anything real
 
 ## Open questions / not yet decided
-- **Does the dispatcher-console Next.js/Prisma app still exist anywhere, or does it need to be rebuilt?** The old repo was deleted; unconfirmed whether the local folder survived. This blocks the first tool from showing anything real.
-- Where should that console live — its own separate repo (as before), or folded into this one as a subfolder? Current assumption is "stays separate," not yet confirmed.
 - Multi-monitor behavior — window positioning currently only considers the primary display
 - Whether to eventually pursue a signed/notarized build ($99/year) for wider distribution, or stay unsigned indefinitely
 - HCP MAX plan status — still unconfirmed from earlier sessions
@@ -56,3 +60,4 @@ Single repo: **`tgdg-overwatch`**. (Earlier `tgdg-zip-dispatcher` repo was retir
 - 2026-09-30: Built the real availability engine and Prisma-backed API routes; pivoted from customer-facing booking to an internal dispatcher console; added a Chrome/Edge side panel extension; found and fixed a theme-variable bug that had silently broken all brand colors.
 - 2026-09-30 (later): Retired the single-purpose app model in favor of **TGDG Overwatch** as a cross-browser extension shell. Verified real cross-browser and cost constraints via research. Old repo retired; new repo `tgdg-overwatch` created; initial three-browser-extension scaffold built (Chrome/Edge + Firefox manifests, shared panel UI, build script).
 - 2026-10-03: Retired the browser-extension approach entirely in favor of a small **Electron desktop app** that docks itself to the screen edge regardless of browser — solves Safari for free as a side effect and collapses three manifest variants into one codebase. Rebuilt the panel UI (icon rail, settings, iframe) on top of Electron's main/preload/renderer model with JSON-file storage. Old extension-specific files (manifests, per-browser build script) removed.
+- 2026-10-03 (later): Confirmed the old `tgdg-zip-dispatcher` repo's code did not survive. Rebuilt the dispatch console from scratch as `tools/dispatch-console/` inside this same repo (monorepo decision made and closed, not left open) — full Prisma schema, availability engine, HCP client/webhook verification, and the branded three-tier UI, all verified clean (tsc + eslint, zero errors) and with the color-theme bug fixed from the start rather than patched in after.
