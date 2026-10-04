@@ -1,0 +1,53 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Technician {
+  id             String   @id @default(cuid())
+  hcpEmployeeId  String   @unique
+  name           String
+  active         Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  zipCoverage    ZipCoverage[]
+  appointments   Appointment[]
+}
+
+model ZipCoverage {
+  id            String     @id @default(cuid())
+  zip           String
+  technicianId  String
+  technician    Technician @relation(fields: [technicianId], references: [id])
+  createdAt     DateTime   @default(now())
+
+  @@unique([zip, technicianId])
+  @@index([zip])
+}
+
+model Appointment {
+  id            String     @id @default(cuid())
+  hcpJobId      String     @unique
+  technicianId  String
+  technician    Technician @relation(fields: [technicianId], references: [id])
+  startTime     DateTime
+  endTime       DateTime
+  status        String
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+
+  @@index([technicianId, startTime])
+}
+
+model WebhookEvent {
+  id          String   @id @default(cuid())
+  hcpEventId  String   @unique
+  receivedAt  DateTime @default(now())
+  processed   Boolean  @default(false)
+  payload     Json
+}
