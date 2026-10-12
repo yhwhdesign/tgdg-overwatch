@@ -1,0 +1,47 @@
+const esbuild = require("esbuild");
+const { JSDOM } = require("jsdom");
+const path = require("path");
+let passes = 0, failures = 0;
+const check = (name, ok, detail = "") => { if (ok) passes++; else { failures++; console.log(`FAIL ${name}${detail ? "  <- " + detail : ""}`); } };
+(async () => {
+  const out = await esbuild.build({ entryPoints: [path.join(__dirname, "../../src/app/reports/page.tsx")], bundle: true, write: false, format: "cjs", platform: "node", jsx: "automatic", alias: { "@": path.join(__dirname, "../../src") }, nodePaths: [path.join(__dirname, "../../node_modules")], external: ["react", "react/jsx-runtime", "react/jsx-dev-runtime", "react-dom"], logLevel: "silent" });
+  const dom = new JSDOM("<!doctype html><html><body><div id='root'></div></body></html>", { url: "http://localhost:3000/reports", pretendToBeVisual: true });
+  const { window } = dom;
+  Object.assign(globalThis, { window, document: window.document, HTMLElement: window.HTMLElement, Event: window.Event });
+  globalThis.IS_REACT_ACT_ENVIRONMENT = true;
+  const React = require("react"); const { createRoot } = require("react-dom/client"); const { act } = React;
+  const mod = { exports: {} }; new Function("module", "exports", "require", out.outputFiles[0].text)(mod, mod.exports, require);
+  const Page = mod.exports.default;
+  let handler; const calls = [];
+  globalThis.fetch = async (url) => { calls.push(String(url)); return handler(); };
+  const root = createRoot(document.getElementById("root"));
+  const text = () => document.body.textContent.replace(/\s+/g, " ").trim();
+  const mount = async () => { calls.length = 0; await act(async () => { root.render(React.createElement(React.Fragment, { key: Math.random() }, React.createElement(Page))); }); await act(async () => { await new Promise((r) => setTimeout(r, 5)); }); };
+
+  handler = () => ({ ok: true, status: 200, json: async () => ({ enabled: true, signedIn: true }) });
+  await mount();
+  check("R1 signed in: shows the Reports page with the honest 'nothing here yet'", /Reports/.test(text()) && !!document.querySelector('[data-state="signedIn"]') && /Nothing here yet/.test(text()) && /Housecall Pro/.test(text()), text());
+  check("R2 it asks the server who you are (and only that)", calls.length === 1 && calls[0] === "/api/admin/session", JSON.stringify(calls));
+
+  handler = () => ({ ok: true, status: 200, json: async () => ({ enabled: true, signedIn: false }) });
+  await mount();
+  check("R3 not signed in: says Reports are for admins and where to sign in; no report content", !!document.querySelector('[data-state="signedOut"]') && /Reports are for admins/.test(text()) && /Admin tab/.test(text()) && !/Nothing here yet/.test(text()), text());
+  handler = () => ({ ok: true, status: 200, json: async () => ({ enabled: false, signedIn: false }) });
+  await mount();
+  check("R4 admin switched off: also just the 'for admins' message", !!document.querySelector('[data-state="signedOut"]'));
+  handler = () => ({ ok: true, status: 200, json: async () => ({ signedIn: "yes" }) });
+  await mount();
+  check("R5 a strange answer (not exactly true) is treated as NOT signed in", !!document.querySelector('[data-state="signedOut"]') && !document.querySelector('[data-state="signedIn"]'));
+  handler = () => { throw new Error("offline"); };
+  await mount();
+  check("R6 server unreachable: a plain message to check the server, and no report content", !!document.querySelector('[data-state="error"]') && /Make sure the server is running/.test(text()) && !/Nothing here yet/.test(text()));
+  handler = () => ({ ok: false, status: 500, json: async () => ({}) });
+  await mount();
+  check("R7 a server error: same message", !!document.querySelector('[data-state="error"]'));
+  handler = () => new Promise(() => {});
+  await act(async () => { root.render(React.createElement(React.Fragment, { key: Math.random() }, React.createElement(Page))); });
+  check("R8 while waiting it shows only 'Loading'", /Loading/.test(text()) && !document.querySelector("[data-state]"));
+  await act(async () => { root.unmount(); });
+  console.log(`\n${passes} passed, ${failures} failed`);
+  process.exit(failures ? 1 : 0);
+})().catch((e) => { console.error("TEST CRASH:", e); process.exit(2); });

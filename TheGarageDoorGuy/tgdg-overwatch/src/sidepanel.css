@@ -1,12 +1,12 @@
-/* Shell chrome stays dark/neutral and quiet — this is on-screen all day,
-   so it should read as "utility," not compete with whatever tool is loaded
-   inside it. Orange is used once, only for the active tool indicator. */
+/* The panel's own chrome stays dark and quiet: it is on screen all day, so it should read as "utility" and
+   not compete with the tool shown inside it. Orange is used once, for the active tab. */
 
 :root {
   --black: #16140f;
   --cream: #f4f2ea;
   --orange: #e97530;
   --gray: #4a473e;
+  --line: #2a2822;
 }
 
 * { box-sizing: border-box; }
@@ -17,95 +17,83 @@ html, body {
   height: 100%;
   font-family: Arial, Helvetica, sans-serif;
   background: var(--cream);
+  color: var(--black);
 }
 
-#rail {
-  display: flex;
-  gap: 4px;
-  padding: 6px 8px 0;
-  background: var(--black);
-}
+button { font-family: inherit; cursor: pointer; }
+button:focus-visible, input:focus-visible { outline: 2px solid var(--orange); outline-offset: 1px; }
 
-.rail-btn {
-  width: 32px;
+#chrome { background: var(--black); }
+
+/* ---- tabs ---- */
+#tabbar { display: flex; align-items: flex-end; gap: 4px; padding: 6px 8px 0; }
+#tabs { display: flex; gap: 4px; flex: 1; min-width: 0; }
+
+.tab {
+  min-width: 32px;
   height: 32px;
-  border-radius: 6px 6px 0 0;
+  padding: 0 12px;
   border: none;
+  border-radius: 6px 6px 0 0;
   background: transparent;
   color: #cfcdc4;
   font-weight: 700;
-  font-size: 13px;
-  cursor: pointer;
+  font-size: 12px;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
 }
+.tab:hover { color: #fff; }
+.tab.active { background: var(--cream); color: var(--black); box-shadow: inset 0 2px 0 var(--orange); }
 
-.rail-btn:hover { color: #fff; }
-
-.rail-btn.active {
-  background: var(--cream);
-  color: var(--black);
-  box-shadow: inset 0 2px 0 var(--orange);
-}
-
-#topbar {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 6px 10px;
-  background: var(--black);
-  border-bottom: 1px solid #2a2822;
-}
-
-#active-tool-name {
-  flex: 1;
+#menu-btn {
+  width: 32px;
+  height: 32px;
+  border: none;
+  border-radius: 6px 6px 0 0;
+  background: transparent;
   color: #cfcdc4;
-  font-size: 11px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
+  font-size: 16px;
 }
+#menu-btn:hover, #menu-btn[aria-expanded="true"] { color: #fff; background: #26241d; }
+#menu-btn[hidden] { display: none; }
 
-#toggle-settings {
+/* ---- the strip under the tabs ---- */
+#topbar { display: flex; align-items: center; gap: 6px; padding: 6px 10px; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+#active-tool-name { flex: 1; color: #cfcdc4; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; }
+#reload-btn, #toggle-settings {
   background: transparent;
   border: 1px solid #3a382f;
   color: #cfcdc4;
   font-size: 13px;
   padding: 2px 8px;
   border-radius: 4px;
-  cursor: pointer;
 }
+#reload-btn:hover, #toggle-settings:hover, #toggle-settings[aria-expanded="true"] { border-color: var(--orange); color: var(--orange); }
 
-#toggle-settings:hover { border-color: var(--orange); color: var(--orange); }
+/* ---- settings drawer ---- */
+#settings { padding: 10px; border-bottom: 1px solid var(--line); color: #cfcdc4; font-size: 12px; }
+#settings[hidden] { display: none; }
+#settings label, #settings .label { display: block; margin: 10px 0 4px; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: #8f8c80; }
+#settings label:first-child { margin-top: 0; }
+#settings label.toggle { margin: 4px 0; font-size: 12px; font-weight: 400; text-transform: none; letter-spacing: 0; color: #cfcdc4; }
+.row { display: flex; gap: 6px; }
+#settings input[type="text"] { flex: 1; min-width: 0; font-size: 12px; padding: 5px 7px; border-radius: 4px; border: 1px solid #3a382f; background: #0f0e0b; color: var(--cream); }
+#save-server { font-size: 11px; padding: 5px 12px; border-radius: 4px; border: none; background: var(--orange); color: var(--black); font-weight: 700; }
+.preset { flex: 1; font-size: 11px; padding: 5px 6px; border-radius: 4px; border: 1px solid #3a382f; background: transparent; color: #cfcdc4; }
+.preset[aria-pressed="true"] { border-color: var(--orange); color: var(--orange); font-weight: 700; }
+.secondary { margin-top: 8px; font-size: 11px; padding: 5px 10px; border-radius: 4px; border: 1px solid #3a382f; background: transparent; color: #cfcdc4; }
+.secondary[hidden] { display: none; }
+.error { margin: 6px 0 0; color: #ffb08a; font-size: 12px; }
+.error[hidden] { display: none; }
 
-#settings {
-  display: none;
-  gap: 6px;
-  padding: 8px;
-  background: var(--black);
-  border-bottom: 1px solid #2a2822;
-}
+/* ---- the burger menu: covers the area where the tool would be ---- */
+#menu-panel { padding: 10px; background: var(--cream); }
+#menu-panel[hidden] { display: none; }
+.menu-row { display: flex; align-items: center; gap: 12px; width: 100%; padding: 12px; margin-bottom: 6px; border: 1px solid #d8d5c9; border-radius: 6px; background: #fff; text-align: left; font-size: 14px; color: var(--black); }
+.menu-row:hover { border-color: var(--orange); }
+.menu-row.active { box-shadow: inset 3px 0 0 var(--orange); font-weight: 700; }
+.menu-row .glyph { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; border-radius: 50%; background: var(--black); color: var(--cream); font-size: 12px; font-weight: 700; }
+.menu-row .name { flex: 1; }
+.menu-row .mark { color: var(--orange); }
 
-#settings.open { display: flex; }
-
-#settings input {
-  flex: 1;
-  font-size: 12px;
-  padding: 5px 7px;
-  border-radius: 4px;
-  border: 1px solid #3a382f;
-  background: #0f0e0b;
-  color: var(--cream);
-}
-
-#settings button {
-  font-size: 11px;
-  padding: 5px 10px;
-  border-radius: 4px;
-  border: none;
-  background: var(--orange);
-  color: var(--black);
-  font-weight: 700;
-  cursor: pointer;
-}
-
-#frame-wrap { height: calc(100% - 73px); }
-#app { width: 100%; height: 100%; border: none; }
+#toggle-settings[hidden] { display: none; }
