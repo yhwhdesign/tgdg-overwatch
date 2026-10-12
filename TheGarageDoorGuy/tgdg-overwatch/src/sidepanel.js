@@ -1,49 +1,220 @@
-// TOOLS, getToolUrl, setToolUrl come from tools.js, loaded just before this
-// script — both are plain <script> tags sharing one global scope, no module
-// system needed for a file this small.
+// The panel's own page: tabs, the burger menu, and the settings drawer. The tools themselves are NOT inside this
+// page; the app places each one as a separate page below this header (see main.js).
+// ShellLogic (shell-logic.js) and TOOLS (tools.js) are loaded just before this file.
 
-const rail = document.getElementById("rail");
-const frame = document.getElementById("app");
+const chrome = document.getElementById("chrome");
+const tabbar = document.getElementById("tabbar");
+const tabsEl = document.getElementById("tabs");
+const menuBtn = document.getElementById("menu-btn");
+const menuPanel = document.getElementById("menu-panel");
 const nameLabel = document.getElementById("active-tool-name");
-const toggleBtn = document.getElementById("toggle-settings");
-const settingsPanel = document.getElementById("settings");
-const urlInput = document.getElementById("url-input");
-const saveBtn = document.getElementById("save-url");
+const reloadBtn = document.getElementById("reload-btn");
+const settingsBtn = document.getElementById("toggle-settings");
+const settingsEl = document.getElementById("settings");
+const serverInput = document.getElementById("server-input");
+const saveServerBtn = document.getElementById("save-server");
+const settingsError = document.getElementById("settings-error");
+const widthRow = document.getElementById("width-row");
+const nextScreenBtn = document.getElementById("next-screen");
+const tabsLabel = document.getElementById("tabs-label");
+const tabToggles = document.getElementById("tab-toggles");
 
-let activeTool = TOOLS[0];
+let settings = null; // what the app told us (see publicSettings in main.js)
+let activeId = null;
+let menuOpen = false;
+let settingsOpen = false;
+let reported = { height: -1, overlay: null };
 
-function renderRail() {
-  rail.innerHTML = "";
-  for (const tool of TOOLS) {
-    const btn = document.createElement("button");
-    btn.className = "rail-btn" + (tool.id === activeTool.id ? " active" : "");
-    btn.textContent = tool.glyph;
-    btn.title = tool.name;
-    btn.addEventListener("click", () => switchTool(tool));
-    rail.appendChild(btn);
+const visibleTools = () => ShellLogic.visibleTools(TOOLS, settings.hiddenTools, settings.adminSignedIn);
+const activeTool = () => TOOLS.find((t) => t.id === activeId) || null;
+/** The settings cog is for a signed-in admin, on the admin screen, and nobody else. */
+const settingsAllowed = () => ShellLogic.settingsButtonVisible(settings.adminSignedIn, activeTool());
+
+function el(tag, className, text) {
+  const node = document.createElement(tag);
+  if (className) node.className = className;
+  if (text !== undefined) node.textContent = text;
+  return node;
+}
+
+function renderTabs() {
+  const available = Math.max(0, tabbar.clientWidth - 16);
+  const layout = ShellLogic.layoutTabs(visibleTools(), activeId, available);
+  tabsEl.replaceChildren();
+  for (const tool of layout.visible) {
+    const tab = el("button", "tab" + (tool.id === activeId ? " active" : ""), layout.mode === "names" ? tool.shortName : tool.glyph);
+    tab.type = "button";
+    tab.setAttribute("role", "tab");
+    tab.setAttribute("aria-selected", String(tool.id === activeId));
+    tab.dataset.tool = tool.id;
+    tab.title = tool.name;
+    tab.addEventListener("click", () => switchTool(tool.id));
+    tabsEl.appendChild(tab);
+  }
+  menuBtn.hidden = !layout.showMenu;
+  menuBtn.setAttribute("aria-expanded", String(menuOpen));
+}
+
+function renderMenu() {
+  menuPanel.hidden = !menuOpen;
+  if (!menuOpen) return;
+  menuPanel.replaceChildren();
+  for (const tool of visibleTools()) {
+    const row = el("button", "menu-row" + (tool.id === activeId ? " active" : ""));
+    row.type = "button";
+    row.setAttribute("role", "menuitem");
+    row.dataset.tool = tool.id;
+    row.append(el("span", "glyph", tool.glyph), el("span", "name", tool.name), el("span", "mark", tool.id === activeId ? "\u25CF" : ""));
+    row.addEventListener("click", () => switchTool(tool.id));
+    menuPanel.appendChild(row);
   }
 }
 
-async function switchTool(tool) {
-  activeTool = tool;
-  nameLabel.textContent = tool.name;
-  settingsPanel.classList.remove("open");
-  renderRail();
-  const url = await getToolUrl(tool);
-  frame.src = url;
-  urlInput.value = url;
+function renderSettings() {
+  settingsEl.hidden = !settingsOpen;
+  settingsBtn.setAttribute("aria-expanded", String(settingsOpen));
+  if (!settingsOpen) return;
+
+  widthRow.replaceChildren();
+  for (const preset of settings.widthPresets) {
+    const btn = el("button", "preset", preset.label);
+    btn.type = "button";
+    btn.dataset.width = String(preset.width);
+    btn.setAttribute("aria-pressed", String(settings.width === preset.width));
+    btn.addEventListener("click", async () => {
+      await window.overwatch.setWidth(preset.width);
+    });
+    widthRow.appendChild(btn);
+  }
+
+  nextScreenBtn.hidden = settings.displayCount <= 1;
+  nextScreenBtn.textContent = `Move to next screen (${settings.displayIndex + 1} of ${settings.displayCount})`;
+
+  tabToggles.replaceChildren();
+  const hideable = TOOLS.filter((t) => !t.core && !t.adminOnly);
+  tabsLabel.hidden = hideable.length === 0;
+  for (const tool of hideable) {
+    const label = el("label", "toggle");
+    const box = document.createElement("input");
+    box.type = "checkbox";
+    box.checked = !settings.hiddenTools.includes(tool.id);
+    box.dataset.tool = tool.id;
+    box.addEventListener("change", async () => {
+      const result = await window.overwatch.setToolHidden(tool.id, !box.checked);
+      if (result && result.ok) {
+        settings.hiddenTools = result.hiddenTools;
+        if (result.activeTool) activeId = result.activeTool;
+        render();
+      } else {
+        box.checked = !box.checked;
+      }
+    });
+    label.append(box, document.createTextNode(` Show the ${tool.name} tab`));
+    tabToggles.appendChild(label);
+  }
 }
 
-toggleBtn.addEventListener("click", () => {
-  settingsPanel.classList.toggle("open");
+/** Tells the app how tall this header is (so the tool's page starts right below it) and whether the menu is covering the tool. */
+function reportLayout() {
+  const height = Math.ceil(chrome.getBoundingClientRect().height);
+  if (height === reported.height && menuOpen === reported.overlay) return;
+  reported = { height, overlay: menuOpen };
+  window.overwatch.setLayout({ chromeHeight: height, overlay: menuOpen });
+}
+
+function render() {
+  const tool = activeTool();
+  nameLabel.textContent = tool ? tool.name : "";
+  settingsBtn.hidden = !settingsAllowed();
+  if (!settingsAllowed()) settingsOpen = false;
+  renderTabs();
+  renderMenu();
+  renderSettings();
+  reportLayout();
+}
+
+async function switchTool(id) {
+  menuOpen = false;
+  settingsOpen = false;
+  settingsError.hidden = true;
+  activeId = id;
+  render();
+  await window.overwatch.showTool(id);
+}
+
+menuBtn.addEventListener("click", () => {
+  menuOpen = !menuOpen;
+  if (menuOpen) settingsOpen = false;
+  render();
 });
 
-saveBtn.addEventListener("click", async () => {
-  const url = urlInput.value.trim();
-  if (!url) return;
-  await setToolUrl(activeTool, url);
-  frame.src = url;
-  settingsPanel.classList.remove("open");
+settingsBtn.addEventListener("click", () => {
+  if (!settingsAllowed()) return;
+  settingsOpen = !settingsOpen;
+  if (settingsOpen) {
+    menuOpen = false;
+    serverInput.value = settings.serverUrl;
+    settingsError.hidden = true;
+  }
+  render();
 });
 
-switchTool(TOOLS[0]);
+reloadBtn.addEventListener("click", () => window.overwatch.reloadTool());
+
+saveServerBtn.addEventListener("click", async () => {
+  const result = ShellLogic.normalizeServerUrl(serverInput.value);
+  if (!result.ok) {
+    settingsError.textContent = result.error;
+    settingsError.hidden = false;
+    return;
+  }
+  const saved = await window.overwatch.setServerUrl(serverInput.value);
+  if (!saved || !saved.ok) {
+    settingsError.textContent = (saved && saved.error) || "Could not save that address.";
+    settingsError.hidden = false;
+    return;
+  }
+  settings.serverUrl = saved.url;
+  settingsError.hidden = true;
+  settingsOpen = false;
+  render();
+});
+
+serverInput.addEventListener("keydown", (event) => {
+  if (event.key === "Enter") saveServerBtn.click();
+});
+
+nextScreenBtn.addEventListener("click", () => window.overwatch.nextScreen());
+
+document.addEventListener("keydown", (event) => {
+  if (event.key !== "Escape") return;
+  if (menuOpen || settingsOpen) {
+    menuOpen = false;
+    settingsOpen = false;
+    render();
+  }
+});
+
+window.addEventListener("resize", render);
+if (typeof ResizeObserver !== "undefined") new ResizeObserver(reportLayout).observe(chrome);
+
+window.overwatch.onAdminChanged((info) => {
+  settings.adminSignedIn = info.adminSignedIn === true;
+  if (info.activeTool && info.activeTool !== activeId) activeId = info.activeTool; // the app moved us off an admin-only tab
+  if (!settings.adminSignedIn) settingsOpen = false;
+  render();
+});
+
+window.overwatch.onDockChanged((info) => {
+  settings.width = info.width;
+  settings.displayCount = info.displayCount;
+  settings.displayIndex = info.displayIndex;
+  render();
+});
+
+(async function start() {
+  settings = await window.overwatch.getSettings();
+  const shown = visibleTools();
+  const first = shown.find((t) => t.id === settings.lastTool) || shown[0];
+  await switchTool(first.id);
+})();

@@ -6,7 +6,9 @@
   "main": "src/main.js",
   "scripts": {
     "start": "electron .",
-    "dist": "electron-builder"
+    "dist": "electron-builder",
+    "test": "node tests/shell/shell-logic.test.cjs",
+    "test:e2e": "node tests/shell/e2e/run.mjs"
   },
   "license": "ISC",
   "devDependencies": {
@@ -16,10 +18,21 @@
   "build": {
     "appId": "com.thegaragedoorguycorp.overwatch",
     "productName": "TGDG Overwatch",
-    "files": ["src/**/*"],
-    "directories": { "output": "release" },
-    "mac": { "identity": null, "target": "dir" },
-    "win": { "target": "portable" },
-    "linux": { "target": "AppImage" }
+    "files": [
+      "src/**/*"
+    ],
+    "directories": {
+      "output": "release"
+    },
+    "mac": {
+      "identity": null,
+      "target": "dir"
+    },
+    "win": {
+      "target": "portable"
+    },
+    "linux": {
+      "target": "AppImage"
+    }
   }
 }
