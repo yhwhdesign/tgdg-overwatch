@@ -243,7 +243,7 @@ eq("L13 notes in several shapes: content/text/note/body/message/description, and
 eq("L14 notes as plain text, as one string, and mixed with junk", [noteTexts(["x", "y"]), noteTexts("solo"), noteTexts([null, 5, {}, { content: "  " }, { content: "ok" }, [["deep"]], true])], [["x", "y"], ["solo"], ["ok"]]);
 eq("L15 an object with several text fields uses the first sensible one only", noteTexts([{ text: "second", content: "first" }]), ["first"]);
 eq("L16 nothing usable gives no notes (never a crash)", [undefined, null, 5, true, {}, [], "   ", () => 1].map((v) => noteTexts(v)), [[], [], [], [], [], [], [], []]);
-eq("L17 a long note is cut to 300 characters with an ellipsis", [noteTexts(["z".repeat(500)])[0].length, noteTexts(["z".repeat(500)])[0].endsWith("…")], [300, true]);
+eq("L17 a long note is cut to 300 characters followed by three dots", [noteTexts(["z".repeat(500)])[0].length, noteTexts(["z".repeat(500)])[0].endsWith("zzz..."), noteTexts(["z".repeat(300)])[0].length], [303, true, 300]);
 eq("L18 the total stays under about 700 characters (the oldest of three long notes is dropped)", noteTexts(["a".repeat(300), "b".repeat(300), "c".repeat(300)]).map((t) => t[0]), ["b", "c"]);
 eq("L19 a hundred notes: only the last three", noteTexts(Array.from({ length: 100 }, (_, i) => `note ${i}`)), ["note 97", "note 98", "note 99"]);
 eq("L20 HTML in a note stays plain text (it is only ever displayed as text)", noteTexts(["<img src=x onerror=alert(1)>"]), ["<img src=x onerror=alert(1)>"]);

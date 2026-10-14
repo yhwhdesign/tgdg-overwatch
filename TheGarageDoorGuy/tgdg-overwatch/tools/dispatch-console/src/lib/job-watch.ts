@@ -161,7 +161,7 @@ export function noteTexts(value: unknown): string[] {
   };
   if (Array.isArray(value)) for (const item of value.slice(-50)) take(item, 0); // the newest notes are last
   else take(value, 0);
-  const cleaned = raw.map((t) => t.replace(/\s+/g, " ").trim()).filter(Boolean).map((t) => (t.length > NOTE_MAX_EACH ? `${t.slice(0, NOTE_MAX_EACH - 1)}…` : t));
+  const cleaned = raw.map((t) => t.replace(/\s+/g, " ").trim()).filter(Boolean).map((t) => (t.length > NOTE_MAX_EACH ? `${t.slice(0, NOTE_MAX_EACH).trimEnd()}...` : t));
   const kept = cleaned.slice(-NOTE_MAX_SHOWN);
   while (kept.length > 1 && kept.join("").length > NOTE_MAX_TOTAL) kept.shift();
   return kept;
