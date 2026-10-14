@@ -2,6 +2,7 @@ const { app, BrowserWindow, screen } = require("electron");
 const { execFileSync } = require("child_process");
 const fs = require("fs");
 process.env.OVERWATCH_ADMIN_CHECK_MS = "1500";
+process.env.OVERWATCH_JOBWATCH_POLL_MS = "1000";
 app.commandLine.appendSwitch("no-sandbox"); app.commandLine.appendSwitch("disable-gpu"); app.setPath("userData", process.env.TEST_USERDATA);
 const SHOTS = process.env.SHOT_DIR || require("os").tmpdir();
 const results = []; const check = (name, ok, detail = "") => results.push({ name, ok: !!ok, detail: ok ? "" : String(detail) });
@@ -14,7 +15,7 @@ const tabs = () => ui(`[...document.querySelectorAll('#tabs .tab')].map(t => ({ 
 const ids = async () => (await tabs()).map((t) => t.id).join(",");
 const burger = () => ui("document.getElementById('menu-btn').hidden === false");
 const cog = () => ui("document.getElementById('toggle-settings').hidden === false");
-const shot = (name) => { try { execFileSync("import", ["-window", "root", `${SHOTS}/${name}-full.png`]); const b = win().getBounds(); execFileSync("convert", [`${SHOTS}/${name}-full.png`, "-crop", `${b.width + 40}x700+${b.x - 20}+0`, "+repage", `${SHOTS}/${name}.png`]); } catch (e) {} };
+const shot = (name) => { try { execFileSync("import", ["-window", "root", `${SHOTS}/${name}-full.png`], { timeout: 10000 }); const b = win().getBounds(); execFileSync("convert", [`${SHOTS}/${name}-full.png`, "-crop", `${b.width + 40}x700+${b.x - 20}+0`, "+repage", `${SHOTS}/${name}.png`], { timeout: 10000 }); } catch (e) {} };
 (async () => {
   const { server } = await require("./stand-in-server.js").start(3000);
   require(require("./ten-tool-app.js").build());

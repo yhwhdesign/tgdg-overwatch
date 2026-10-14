@@ -22,10 +22,11 @@ Some suites run several times on purpose, in different server time zones (Chicag
 | | `hcp-read-only` | **Every request ever sent to Housecall Pro is a read (GET).** This test fails if that ever stops being true. |
 | | `diagnose` | The "why does the console show this?" checker |
 | | `classification-and-admin-session` | Residential / Commercial / Hybrid rules; the admin password and sign-in cookie |
+| | `job-watch` | Job Watch: the 90 / 60 minute rules at their exact boundaries, install-or-service from odd field shapes, multi-day and midnight cases in four server time zones, jobs a tech has just finished (the window, the notes in every shape, "notes pending", the one-time full-record read, notes switched off), customer detail kept out, the one-minute cache (and break-the-code checks that prove the tests can fail) |
 | | `sync-status`, `auto-sync-controller` | The "Schedule as of ..." freshness states and the refresh timer (backs off while failing, only runs during business hours) |
-| `scripts/` | `events-probe`, `events-survey` | The command-line tools in `scripts/` |
+| `scripts/` | `events-probe`, `events-survey`, `jobwatch-probe` | The command-line tools in `scripts/` (the Job Watch probe is checked against a fake Housecall Pro of known jobs, number by number, and must never print customer detail) |
 | `ui/` | `console-flow`, `admin-screen`, `reports-page` | The screens, clicked through in a simulated browser |
-| `server/` | `offered-technicians-route`, `hcp-sync-route`, `refresh-and-status`, `admin-session-route` | The API routes: who is offered, the sync endpoint, Refresh now and the status routes, the admin yes/no check |
+| `server/` | `offered-technicians-route`, `hcp-sync-route`, `refresh-and-status`, `admin-session-route`, `job-watch-route` | The API routes: who is offered, the sync endpoint, Refresh now and the status routes, the admin yes/no check, and Job Watch through the real Housecall Pro client (only reads, no customer detail, cached, fails politely) |
 
 ## Adding a test
 Put a file in the matching folder, make it print `N passed, M failed` and exit non-zero on any failure, and add one line to the list in `run-all.mjs`. Scratch files the UI and server suites need are written to `tests/.tmp/` (git-ignored).

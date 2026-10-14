@@ -11,6 +11,12 @@ contextBridge.exposeInMainWorld("overwatch", {
   setWidth: (width) => ipcRenderer.invoke("window:setWidth", width),
   nextScreen: () => ipcRenderer.invoke("window:nextScreen"),
   setLayout: (layout) => ipcRenderer.send("layout:set", layout),
+  dismissJobWatch: (id) => ipcRenderer.invoke("jobwatch:dismiss", id),
+  onJobWatchChanged: (callback) => {
+    const handler = (_event, info) => callback(info);
+    ipcRenderer.on("jobwatch:changed", handler);
+    return () => ipcRenderer.removeListener("jobwatch:changed", handler);
+  },
   onAdminChanged: (callback) => {
     const handler = (_event, info) => callback(info);
     ipcRenderer.on("admin:changed", handler);

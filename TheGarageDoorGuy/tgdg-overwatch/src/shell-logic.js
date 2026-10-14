@@ -138,16 +138,120 @@
     return override || joinUrl(settings && settings.serverUrl, tool.path);
   }
 
+  // ---- Job Watch alerts ----------------------------------------------------------------------------
+
+  const DISMISS_KEEP_MS = 24 * 60 * 60 * 1000;
+  const MAX_DISMISSED = 200;
+
+  /** "45m", "1h", "1h 40m". */
+  function formatDuration(minutes) {
+    const m = Math.max(0, Math.round(Number(minutes) || 0));
+    if (m < 60) return `${m}m`;
+    return m % 60 === 0 ? `${m / 60}h` : `${Math.floor(m / 60)}h ${m % 60}m`;
+  }
+
+  /** "Alex", "Alex and Blake", "Alex, Blake and Casey". */
+  function joinNames(names) {
+    const list = (names || []).filter(Boolean);
+    if (list.length === 0) return "A technician";
+    if (list.length === 1) return list[0];
+    return `${list.slice(0, -1).join(", ")} and ${list[list.length - 1]}`;
+  }
+
+  /** The two lines shown on the alert bar. The time on the job keeps counting between checks (it is worked out from the start time). */
+  function alertMessage(alert, nowMs) {
+    const techs = alert.techs || [];
+    const started = Date.parse(alert.startedAt);
+    const counted = Number.isFinite(started) ? Math.floor((nowMs - started) / 60000) : 0;
+    const minutes = Math.max(Number(alert.minutesOnJob) || 0, counted);
+    return {
+      title: `${joinNames(techs)} ${techs.length > 1 ? "have" : "has"} been on "${alert.label}" for ${formatDuration(minutes)}`,
+      detail: `Longer than the normal ${formatDuration(alert.limitMinutes)}. Started ${alert.startedLabel || "earlier"}. Click to dismiss.`,
+    };
+  }
+
+  /** Whatever the server sent, reduced to well-formed alerts (so a surprise in its answer can never break the panel). */
+  function cleanAlerts(list) {
+    const number = (v) => (Number.isFinite(Number(v)) ? Number(v) : 0);
+    const out = [];
+    for (const a of Array.isArray(list) ? list.slice(0, 30) : []) {
+      if (!a || typeof a !== "object" || typeof a.id !== "string" || a.id.length === 0 || a.id.length > 120) continue;
+      out.push({
+        id: a.id,
+        kind: a.kind === "install" ? "install" : "service",
+        label: String(a.label == null ? "Job" : a.label).slice(0, 60),
+        techs: (Array.isArray(a.techs) ? a.techs : []).filter((t) => typeof t === "string" && t.trim()).slice(0, 6).map((t) => t.slice(0, 60)),
+        startedAt: typeof a.startedAt === "string" ? a.startedAt.slice(0, 40) : "",
+        startedLabel: typeof a.startedLabel === "string" ? a.startedLabel.slice(0, 12) : "",
+        minutesOnJob: number(a.minutesOnJob),
+        limitMinutes: number(a.limitMinutes),
+      });
+    }
+    return out;
+  }
+
+  /** Finished-job notifications from the server, reduced to well-formed ones (a surprise in its answer can never break the panel). */
+  function cleanCompletions(list) {
+    const out = [];
+    for (const c of Array.isArray(list) ? list.slice(0, 20) : []) {
+      if (!c || typeof c !== "object" || typeof c.id !== "string" || c.id.length === 0 || c.id.length > 120) continue;
+      const minutes = c.minutesOnJob == null ? null : Number(c.minutesOnJob);
+      out.push({
+        id: c.id,
+        kind: c.kind === "install" ? "install" : "service",
+        label: String(c.label == null ? "Job" : c.label).slice(0, 60),
+        techs: (Array.isArray(c.techs) ? c.techs : []).filter((t) => typeof t === "string" && t.trim()).slice(0, 6).map((t) => t.slice(0, 60)),
+        completedAt: typeof c.completedAt === "string" ? c.completedAt.slice(0, 40) : "",
+        completedLabel: typeof c.completedLabel === "string" ? c.completedLabel.slice(0, 12) : "",
+        minutesOnJob: minutes !== null && Number.isFinite(minutes) ? Math.max(0, minutes) : null,
+        notes: (Array.isArray(c.notes) ? c.notes : []).filter((t) => typeof t === "string" && t.trim()).slice(-3).map((t) => t.trim().slice(0, 320)),
+        notesPending: c.notesPending === true,
+        notesHidden: c.notesHidden === true,
+      });
+    }
+    return out;
+  }
+
+  /** What a "finished" bar says: who finished what, when and after how long, then the notes (or why there are none). */
+  function completionMessage(c) {
+    const took = c.minutesOnJob == null ? "" : ` after ${formatDuration(c.minutesOnJob)}`;
+    const hasNotes = !c.notesHidden && c.notes.length > 0;
+    const notes = c.notesHidden
+      ? "Notes are turned off."
+      : hasNotes
+        ? c.notes.join("\n")
+        : c.notesPending
+          ? "No notes yet. They will appear here if the tech adds them."
+          : "No notes were left.";
+    return { title: `${joinNames(c.techs)} finished "${c.label}"`, detail: `Finished ${c.completedLabel || "just now"}${took}.`, notes, hasNotes };
+  }
+
+  /** Alerts that have not been clicked away. */
+  function undismissedAlerts(alerts, dismissed) {
+    const gone = dismissed && typeof dismissed === "object" ? dismissed : {};
+    return (alerts || []).filter((a) => a && typeof a.id === "string" && !Object.prototype.hasOwnProperty.call(gone, a.id));
+  }
+
+  /** Forgets dismissals older than a day (an alert is about one job on one day) and keeps the list small. */
+  function pruneDismissed(dismissed, nowMs) {
+    const kept = [];
+    for (const [id, at] of Object.entries(dismissed && typeof dismissed === "object" ? dismissed : {})) {
+      if (typeof id === "string" && id.length > 0 && id.length <= 120 && Number.isFinite(at) && nowMs - at < DISMISS_KEEP_MS && at <= nowMs + 60000) kept.push([id, at]);
+    }
+    kept.sort((a, b) => b[1] - a[1]);
+    return Object.fromEntries(kept.slice(0, MAX_DISMISSED));
+  }
+
   // ---- saved settings ----------------------------------------------------------------------------
 
   /**
    * Turns whatever is in the settings file into a complete, valid settings object. Understands the OLD format
    * (just { toolId: url }) and keeps its address as the shared server address.
    */
-  function normalizeSettings(raw, knownToolIds) {
+  function normalizeSettings(raw, knownToolIds, nowMs = Date.now()) {
     const data = raw && typeof raw === "object" && !Array.isArray(raw) ? raw : {};
     const known = new Set(knownToolIds || []);
-    const settings = { version: 2, serverUrl: DEFAULT_SERVER, toolUrls: {}, hiddenTools: [], lastTool: null, window: { width: DEFAULT_WIDTH, displayId: null } };
+    const settings = { version: 2, serverUrl: DEFAULT_SERVER, toolUrls: {}, hiddenTools: [], lastTool: null, window: { width: DEFAULT_WIDTH, displayId: null }, jobWatchDismissed: {} };
 
     if (data.version === 2) {
       const server = normalizeServerUrl(data.serverUrl);
@@ -163,6 +267,7 @@
       const w = data.window && typeof data.window === "object" ? data.window : {};
       settings.window.width = clampWidth(w.width, MAX_WIDTH / MAX_SHARE);
       if (typeof w.displayId === "number" || typeof w.displayId === "string") settings.window.displayId = w.displayId;
+      settings.jobWatchDismissed = pruneDismissed(data.jobWatchDismissed, nowMs);
       return settings;
     }
 
@@ -191,6 +296,14 @@
     toolBounds,
     sameBounds,
     layoutTabs,
+    formatDuration,
+    joinNames,
+    alertMessage,
+    cleanAlerts,
+    cleanCompletions,
+    completionMessage,
+    undismissedAlerts,
+    pruneDismissed,
     visibleTools,
     settingsButtonVisible,
     normalizeServerUrl,

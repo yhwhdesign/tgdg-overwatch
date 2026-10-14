@@ -39,7 +39,7 @@ fs.mkdirSync(shots);
 
 function launch(script, env) {
   const flags = ["--no-sandbox", "--disable-gpu", path.join(here, script)];
-  const options = { env: { ...process.env, SHOT_DIR: shots, ...env }, encoding: "utf8", timeout: 240_000 };
+  const options = { env: { ...process.env, SHOT_DIR: shots, SUITE_TRACE: "1", ...env }, encoding: "utf8", timeout: 240_000 };
   return headless
     ? spawnSync("xvfb-run", ["-a", "-s", "-screen 0 1920x1080x24", electron, ...flags], options)
     : spawnSync(electron, flags, options);
@@ -68,7 +68,10 @@ for (const [i, run] of runs.entries()) {
   try {
     results = JSON.parse(fs.readFileSync(resultFile, "utf8"));
   } catch {
-    console.log(`FAIL [${run.label}] produced no result (exit ${out.status})\n${(out.stderr || "").split("\n").filter((l) => !/dbus|ERROR:/.test(l)).slice(-8).join("\n")}`);
+    const traced = (out.stdout || "").split("\n").filter((l) => /^(ok  |FAIL) /.test(l));
+    console.log(`FAIL [${run.label}] produced no result (exit ${out.status}${out.signal ? `, killed by ${out.signal}: it got stuck` : ""})`);
+    console.log(`   last step that finished: ${traced.length ? traced[traced.length - 1] : "(none: it never got going)"}`);
+    console.log((out.stderr || "").split("\n").filter((l) => !/dbus|ERROR:/.test(l) && l.trim()).slice(-6).join("\n"));
     failed += 1;
     continue;
   }

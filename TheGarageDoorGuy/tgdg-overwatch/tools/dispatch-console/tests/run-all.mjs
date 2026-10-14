@@ -27,10 +27,12 @@ const suites = [
   ["unit", "events-sync.test.mts"],
   ["unit", "events-client.test.mts"],
   ["unit", "repeat-rules.test.mts"],
+  ["unit", "job-watch.test.mts", ALL],
   ["unit", "sync-status.test.mts", TWO],
   ["unit", "auto-sync-controller.test.mts", THREE],
   ["scripts", "events-probe.test.mjs"],
   ["scripts", "events-survey.test.mjs"],
+  ["scripts", "jobwatch-probe.test.mjs"],
   ["ui", "console-flow.test.cjs"],
   ["ui", "admin-screen.test.cjs"],
   ["ui", "reports-page.test.cjs"],
@@ -38,6 +40,7 @@ const suites = [
   ["server", "hcp-sync-route.test.cjs"],
   ["server", "refresh-and-status.test.cjs"],
   ["server", "admin-session-route.test.cjs"],
+  ["server", "job-watch-route.test.cjs"],
 ];
 
 let failures = 0;
