@@ -1,4 +1,4 @@
-const { app, BrowserWindow, WebContentsView, screen, ipcMain, session, shell } = require("electron");
+const { app, BrowserWindow, WebContentsView, screen, ipcMain, net, session, shell } = require("electron");
 const fs = require("node:fs");
 const path = require("node:path");
 const L = require("./shell-logic");
@@ -101,6 +101,100 @@ function writeSettings() {
   const temp = `${file}.tmp`;
   fs.writeFileSync(temp, JSON.stringify(settings, null, 2));
   fs.renameSync(temp, file); // never leave a half-written file behind
+}
+
+// ---- Job Watch: has a technician been on a job longer than normal? -------------------------------------
+// The console works that out (it asks Housecall Pro); the panel just asks the console every couple of minutes and shows
+// what comes back as bars across the top of the window. Clicking a bar dismisses it, and the dismissal is remembered
+// (for a day), so it does not come back on the next check. An overtime bar clears itself when the job finishes, and a
+// green "finished" bar (the tech's notes) shows until it is clicked or it is a few hours old. Nothing is kept as a list. This is for
+// dispatchers: it does not need an admin sign-in.
+const JOB_WATCH_POLL_MS = Number(process.env.OVERWATCH_JOBWATCH_POLL_MS) > 0 ? Number(process.env.OVERWATCH_JOBWATCH_POLL_MS) : 2 * 60 * 1000;
+const JOB_WATCH_OFFLINE_AFTER = 3; // failed checks in a row before the panel says "offline"
+let jobWatch = { polled: false, ok: false, watching: 0, cantTell: 0, ignoredOlder: 0, alerts: [], completed: [], error: null, checkedAt: null, failures: 0 };
+let jobWatchPolling = false;
+let lastJobWatchPollAt = 0;
+const seenAlertIds = new Set();
+
+function jobWatchState() {
+  const state = !jobWatch.polled ? "starting" : jobWatch.ok ? "ok" : jobWatch.failures >= JOB_WATCH_OFFLINE_AFTER ? "offline" : "trouble";
+  return {
+    state,
+    watching: jobWatch.watching,
+    cantTell: jobWatch.cantTell,
+    ignoredOlder: jobWatch.ignoredOlder,
+    alerts: L.undismissedAlerts(jobWatch.alerts, settings ? settings.jobWatchDismissed : {}),
+    completed: L.undismissedAlerts(jobWatch.completed, settings ? settings.jobWatchDismissed : {}),
+    error: jobWatch.error,
+    checkedAt: jobWatch.checkedAt,
+  };
+}
+
+function publishJobWatch() {
+  if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send("jobwatch:changed", jobWatchState());
+}
+
+/** A new alert gets a nudge (the dock icon bounces on a Mac; the taskbar button flashes on Windows). */
+function announceNewAlerts() {
+  const everything = [...jobWatch.alerts, ...jobWatch.completed];
+  const fresh = L.undismissedAlerts(everything, settings.jobWatchDismissed).filter((a) => !seenAlertIds.has(a.id));
+  for (const a of everything) seenAlertIds.add(a.id);
+  if (fresh.length === 0 || !mainWindow || mainWindow.isDestroyed()) return;
+  if (mainWindow.isMinimized()) mainWindow.restore();
+  if (process.platform === "darwin") {
+    if (app.dock) app.dock.bounce("informational");
+  } else {
+    mainWindow.flashFrame(true);
+  }
+}
+
+const debugWatch = process.env.OVERWATCH_DEBUG ? (message) => console.error(`[job-watch ${new Date().toISOString().slice(11, 23)}] ${message}`) : () => {};
+
+async function pollJobWatch() {
+  if (jobWatchPolling || !settings) {
+    debugWatch(`skipped (a check is still running: ${jobWatchPolling})`);
+    return;
+  }
+  jobWatchPolling = true;
+  lastJobWatchPollAt = Date.now();
+  debugWatch("check starts");
+  try {
+    let body = null;
+    let error = null;
+    try {
+      const res = await net.fetch(L.joinUrl(settings.serverUrl, "/api/job-watch"), { headers: { accept: "application/json" }, signal: AbortSignal.timeout(8000) });
+      if (res.ok) body = await res.json();
+      else error = `The console answered HTTP ${res.status}.`;
+    } catch {
+      error = "Can't reach the console.";
+    }
+    if (body && body.ok === true && Array.isArray(body.alerts)) {
+      jobWatch = {
+        polled: true,
+        ok: true,
+        watching: Math.max(0, Number(body.watching) || 0),
+        cantTell: Math.max(0, Number(body.cantTell) || 0),
+        ignoredOlder: Math.max(0, Number(body.ignoredOlder) || 0),
+        alerts: L.cleanAlerts(body.alerts),
+        completed: L.cleanCompletions(body.completed), // finished jobs with their notes (an older console may not send any)
+        error: null,
+        checkedAt: typeof body.checkedAt === "string" ? body.checkedAt : new Date().toISOString(),
+        failures: 0,
+      };
+    } else {
+      // Keep the last alerts we knew about; just count the failure.
+      jobWatch = { ...jobWatch, polled: true, ok: false, error: error || (body && typeof body.error === "string" ? body.error.slice(0, 200) : "Job Watch could not check."), failures: jobWatch.failures + 1 };
+    }
+  } finally {
+    jobWatchPolling = false;
+  }
+  try {
+    announceNewAlerts();
+  } catch (err) {
+    debugWatch(`the attention nudge failed (alerts are still shown): ${err && err.message}`); // a failed nudge must never stop an alert being shown
+  }
+  debugWatch(`check done: ok=${jobWatch.ok} alerts=${jobWatch.alerts.length} finished=${jobWatch.completed.length} failures=${jobWatch.failures}`);
+  publishJobWatch();
 }
 
 // ---- docking ---------------------------------------------------------------------------------------
@@ -250,6 +344,7 @@ function publicSettings() {
     hiddenTools: settings.hiddenTools,
     lastTool: settings.lastTool,
     adminSignedIn,
+    jobWatch: jobWatchState(),
     width: info.width,
     widthPresets: L.WIDTH_PRESETS,
     displayCount: info.displayCount,
@@ -266,6 +361,16 @@ ipcMain.handle("settings:get", async (event) => {
   if (!fromPanel(event)) return null;
   await adminReady; // so the panel starts with the right tabs, not a flash of the wrong ones
   return publicSettings();
+});
+
+// Anyone can dismiss an alert (it is for dispatchers), so this is not limited to a signed-in admin.
+ipcMain.handle("jobwatch:dismiss", (event, id) => {
+  if (!fromPanel(event) || typeof id !== "string" || id.length === 0 || id.length > 120) return { ok: false };
+  const now = Date.now();
+  settings.jobWatchDismissed = L.pruneDismissed({ ...settings.jobWatchDismissed, [id]: now }, now);
+  writeSettings();
+  publishJobWatch();
+  return { ok: true };
 });
 
 ipcMain.handle("tool:show", (event, toolId) => (fromPanel(event) ? { ok: showTool(toolId) } : { ok: false }));
@@ -291,6 +396,7 @@ ipcMain.handle("settings:setServer", (event, input) => {
   }
   if (activeToolId) showTool(activeToolId);
   scheduleAdminCheck(); // a different server has its own sign-in
+  void pollJobWatch();
   return { ok: true, url: result.url };
 });
 
@@ -365,13 +471,18 @@ function createWindow() {
     },
   });
   adminReady = checkAdmin();
+  void pollJobWatch();
   mainWindow.setAlwaysOnTop(true, "floating");
   if (process.platform === "darwin") mainWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
 
   // If anything moves it (a window manager, a display change, a restore), put it back.
   for (const name of ["move", "moved", "resized", "show", "restore"]) mainWindow.on(name, scheduleDock);
   mainWindow.on("resize", layoutViews);
-  mainWindow.on("focus", scheduleAdminCheck);
+  mainWindow.on("focus", () => {
+    scheduleAdminCheck();
+    if (Date.now() - lastJobWatchPollAt > 30_000) void pollJobWatch();
+    if (process.platform !== "darwin") mainWindow.flashFrame(false);
+  });
   mainWindow.on("closed", () => {
     mainWindow = null;
     views.clear();
@@ -399,6 +510,7 @@ if (!app.requestSingleInstanceLock()) {
     });
     // ...and look again every few minutes, which catches a password change or a session running out.
     setInterval(() => void checkAdmin(), ADMIN_CHECK_EVERY_MS).unref();
+    setInterval(() => void pollJobWatch(), JOB_WATCH_POLL_MS).unref();
   });
 }
 

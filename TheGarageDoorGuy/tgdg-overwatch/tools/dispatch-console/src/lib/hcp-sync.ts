@@ -47,6 +47,17 @@ export interface HcpJob {
   assigned_employees?: { id: string }[] | null;
   address?: { zip?: string | null } | null;
   job_fields?: { job_type?: unknown; business_unit?: unknown } | null;
+  /** When the tech tapped On my way / Start / Finish in the HCP app (empty until they do). Job Watch reads these. */
+  work_timestamps?: { on_my_way_at?: string | null; started_at?: string | null; completed_at?: string | null } | null;
+  /** The job number people see in HCP. */
+  invoice_number?: string | number | null;
+  // Read only to tell an install from service work (see job-watch.ts); never stored or shown.
+  name?: unknown;
+  description?: unknown;
+  tags?: unknown;
+  line_items?: unknown;
+  /** The job's notes. Job Watch shows them when a tech finishes a job (the shape is read defensively; see noteTexts). */
+  notes?: unknown;
 }
 
 export interface JobsPage {

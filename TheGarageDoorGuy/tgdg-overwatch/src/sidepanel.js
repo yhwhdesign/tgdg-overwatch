@@ -18,12 +18,17 @@ const widthRow = document.getElementById("width-row");
 const nextScreenBtn = document.getElementById("next-screen");
 const tabsLabel = document.getElementById("tabs-label");
 const tabToggles = document.getElementById("tab-toggles");
+const alertsEl = document.getElementById("alerts");
+const watchEl = document.getElementById("watch-status");
 
 let settings = null; // what the app told us (see publicSettings in main.js)
 let activeId = null;
 let menuOpen = false;
 let settingsOpen = false;
 let reported = { height: -1, overlay: null };
+let jobWatch = { state: "starting", watching: 0, cantTell: 0, ignoredOlder: 0, alerts: [], completed: [], error: null, checkedAt: null };
+let alertsSignature = "";
+const MAX_ALERTS_SHOWN = 3;
 
 const visibleTools = () => ShellLogic.visibleTools(TOOLS, settings.hiddenTools, settings.adminSignedIn);
 const activeTool = () => TOOLS.find((t) => t.id === activeId) || null;
@@ -114,6 +119,46 @@ function renderSettings() {
   }
 }
 
+// ---- Job Watch: bars across the top (click one to dismiss it) and a small status next to the tool name ---------
+
+function renderAlerts() {
+  const now = Date.now();
+  // overtime alerts first (they are the urgent ones), then jobs that have just been finished
+  const items = [
+    ...(jobWatch.alerts || []).map((alert) => ({ type: "over", id: alert.id, message: ShellLogic.alertMessage(alert, now) })),
+    ...(jobWatch.completed || []).map((done) => ({ type: "done", id: done.id, message: ShellLogic.completionMessage(done) })),
+  ];
+  const shown = items.slice(0, MAX_ALERTS_SHOWN);
+  const signature = JSON.stringify([shown.map((x) => [x.type, x.id, x.message]), items.length]);
+  if (signature === alertsSignature) return; // nothing changed: leave the buttons alone so a click is never lost mid-press
+  alertsSignature = signature;
+  alertsEl.replaceChildren();
+  for (const { type, id, message } of shown) {
+    const bar = el("button", type === "done" ? "alert done" : "alert");
+    bar.type = "button";
+    bar.dataset.alert = id;
+    bar.title = type === "done" && message.hasNotes ? message.notes : "Click to dismiss";
+    bar.append(el("span", "alert-title", message.title), el("span", "alert-detail", message.detail));
+    if (type === "done") bar.append(el("span", message.hasNotes ? "alert-notes" : "alert-notes none", message.notes), el("span", "alert-hint", "Click to dismiss."));
+    bar.addEventListener("click", () => window.overwatch.dismissJobWatch(id));
+    alertsEl.appendChild(bar);
+  }
+  if (items.length > MAX_ALERTS_SHOWN) alertsEl.appendChild(el("div", "alert-more", `+${items.length - MAX_ALERTS_SHOWN} more (dismiss one to see the next)`));
+}
+
+function renderWatchStatus() {
+  const w = jobWatch;
+  watchEl.hidden = w.state === "starting";
+  watchEl.className = `watch ${w.state === "offline" ? "offline" : w.state === "trouble" ? "trouble" : "ok"}`;
+  watchEl.textContent = w.state === "offline" ? "Job Watch offline" : w.watching === 0 ? "No one on a job" : `${w.watching} on ${w.watching === 1 ? "a job" : "jobs"}`;
+  const parts = [];
+  if (w.state === "offline" || w.state === "trouble") parts.push(`Job Watch can't check right now${w.error ? `: ${w.error}` : "."}`);
+  if (w.checkedAt) parts.push(`Last checked ${new Date(w.checkedAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}.`);
+  if (w.cantTell > 0) parts.push(`${w.cantTell} job${w.cantTell === 1 ? "" : "s"} in progress ${w.cantTell === 1 ? "has" : "have"} no Start tap in Housecall Pro, so can't be watched.`);
+  if (w.ignoredOlder > 0) parts.push(`${w.ignoredOlder} job${w.ignoredOlder === 1 ? "" : "s"} started on an earlier day (not judged).`);
+  watchEl.title = parts.join(" ");
+}
+
 /** Tells the app how tall this header is (so the tool's page starts right below it) and whether the menu is covering the tool. */
 function reportLayout() {
   const height = Math.ceil(chrome.getBoundingClientRect().height);
@@ -123,6 +168,8 @@ function reportLayout() {
 }
 
 function render() {
+  renderAlerts();
+  renderWatchStatus();
   const tool = activeTool();
   nameLabel.textContent = tool ? tool.name : "";
   settingsBtn.hidden = !settingsAllowed();
@@ -198,6 +245,13 @@ document.addEventListener("keydown", (event) => {
 window.addEventListener("resize", render);
 if (typeof ResizeObserver !== "undefined") new ResizeObserver(reportLayout).observe(chrome);
 
+window.overwatch.onJobWatchChanged((info) => {
+  jobWatch = info;
+  renderAlerts();
+  renderWatchStatus();
+});
+setInterval(renderAlerts, 30_000); // the minutes on the job keep counting between checks
+
 window.overwatch.onAdminChanged((info) => {
   settings.adminSignedIn = info.adminSignedIn === true;
   if (info.activeTool && info.activeTool !== activeId) activeId = info.activeTool; // the app moved us off an admin-only tab
@@ -214,6 +268,7 @@ window.overwatch.onDockChanged((info) => {
 
 (async function start() {
   settings = await window.overwatch.getSettings();
+  if (settings.jobWatch) jobWatch = settings.jobWatch;
   const shown = visibleTools();
   const first = shown.find((t) => t.id === settings.lastTool) || shown[0];
   await switchTool(first.id);

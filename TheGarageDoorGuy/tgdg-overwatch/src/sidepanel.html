@@ -8,6 +8,8 @@
 </head>
 <body>
   <div id="chrome">
+    <div id="alerts" role="region" aria-label="Job Watch alerts" aria-live="assertive"></div>
+
     <div id="tabbar">
       <div id="tabs" role="tablist" aria-label="Tools"></div>
       <button id="menu-btn" type="button" title="All tools" aria-haspopup="true" aria-expanded="false" hidden>&#9776;</button>
@@ -15,6 +17,7 @@
 
     <div id="topbar">
       <span id="active-tool-name"></span>
+      <span id="watch-status" class="watch" hidden></span>
       <button id="reload-btn" type="button" title="Reload this tool">&#8635;</button>
       <button id="toggle-settings" type="button" title="Panel settings" aria-expanded="false" hidden>&#9881;</button>
     </div>
