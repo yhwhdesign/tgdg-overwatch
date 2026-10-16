@@ -41,6 +41,7 @@ const suites = [
   ["server", "refresh-and-status.test.cjs"],
   ["server", "admin-session-route.test.cjs"],
   ["server", "job-watch-route.test.cjs"],
+  ["server", "console-login-and-cron.test.cjs"],
 ];
 
 let failures = 0;

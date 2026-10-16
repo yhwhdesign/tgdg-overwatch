@@ -104,13 +104,25 @@ Type-checking on a **fresh clone**: Next generates a few of its own types (such 
 - `GET /api/admin/session` answers `{ enabled, signedIn }`: a plain yes or no, never an error, so the desktop panel can use it to decide whether to show Reports and its settings cog. It only checks the sign-in cookie's signature and expiry (no database, no data), says no for a tampered cookie, an expired one, one signed with an older password, or when `ADMIN_PASSWORD` is empty, and cannot be changed by anything sent to it (it only answers GET).
 - When real reports are added, their data routes must use `adminGate` like the other admin routes; hiding a tab is not security.
 
-## Deploying (Netlify)
-Netlify detects Next.js automatically. Site settings:
-- **Base directory:** `tools/dispatch-console` (this app is a subfolder of the Overwatch repo)
-- **Build command:** `npm run build` (default) &nbsp;|&nbsp; **Publish directory:** leave blank (auto-detected)
-- **Do not add a `netlify.toml`**; the base directory is set in the Netlify UI. Node version comes from `.nvmrc`.
-- **Environment variables:** `DATABASE_URL`, `HCP_API_KEY`, `HCP_WEBHOOK_SIGNING_SECRET`, `BUSINESS_HOURS_START`, `BUSINESS_HOURS_END`, `BUSINESS_TIMEZONE` (see `.env.example`). Never commit real values.
-- `prisma/schema.prisma` lists the `rhel-openssl-3.0.x` binary target so the database engine matches Netlify's runtime, and `postinstall` runs `prisma generate` on every install.
+## Console sign-in (keeps the schedule private once it is online)
+- `CONSOLE_PASSWORD` protects the dispatcher screen, Reports and every data route (`/api/availability`, `/api/job-watch`, `/api/offered-technicians`, `/api/sync-status`). Without the sign-in, pages send you to `/login` and data routes answer 401. The sign-in lasts 30 days in a signed cookie (no database); changing the password signs everyone out. A signed-in Admin is let in too.
+- **Left open on purpose** because they protect themselves: `/login`, the Housecall Pro webhook (signature), `/api/cron/*` (secret), and the Admin screen with its routes (`ADMIN_PASSWORD`).
+- **On your own computer** with no `CONSOLE_PASSWORD`, nothing changes: the console stays open. **On Vercel** with no `CONSOLE_PASSWORD`, the console is **locked** (HTTP 503), so forgetting the setting can never leave it public.
+- The guard is `src/proxy.ts` (Next 16's name for middleware) and the rules are in `src/lib/console-access.ts`, tested without a server in `tests/server/console-login-and-cron.test.cjs`.
+- The desktop panel's Job Watch check sends the same cookie. Until you sign in on the Dispatch tab, its tooltip says "Sign in on the Dispatch tab to turn Job Watch on."
+
+## Scheduled refresh for hosting (`/api/cron/sync`)
+Hosting like Vercel can't keep the automatic timer running (set `AUTO_SYNC_MINUTES=off` there). Instead an outside scheduler calls `GET` or `POST /api/cron/sync` with the header `Authorization: Bearer <CRON_SECRET>` every 10 minutes. The route runs the same refresh as the timer, only inside `AUTO_SYNC_HOURS` (otherwise it answers `skipped`), and records it as an automatic refresh. It is switched off (503) until `CRON_SECRET` is set; a wrong or missing secret is a 401; the secret is never accepted in the web address.
+- Free options: cron-job.org (set the URL, a 10-minute schedule and the Authorization header), or a GitHub Actions schedule. **Do not add a `crons` entry to `vercel.json` on the free Hobby plan**: it only allows one run a day and a faster schedule makes the deployment fail.
+
+## Deploying (Vercel)
+- **Root Directory:** `tools/dispatch-console` (this app is a subfolder of the Overwatch repo). **Production branch:** `main`; pushes to `dev` get preview links.
+- **Build command** is `prisma generate && next build` (in `package.json`): the database client must be generated during the build.
+- **Environment variables** (Settings, Environment Variables; changes apply to the next deploy): everything in `.env.example`, with `AUTO_SYNC_MINUTES=off`, and `CONSOLE_PASSWORD` and `CRON_SECRET` set. Never commit real values.
+- Run database migrations from your own computer (`npx prisma migrate deploy`), not during the build.
+- The font (Archivo) is bundled with the app (`@fontsource-variable/archivo`), so the build never calls Google.
+- Vercel's free Hobby plan is for non-commercial use; a business app belongs on a paid plan.
+- (Netlify also works the same way: base directory `tools/dispatch-console`, no `netlify.toml`.)
 
 Servers run in UTC, so business hours and "today/tomorrow" are always computed in `BUSINESS_TIMEZONE`, never the server's clock (see `src/lib/availability.ts`).
 

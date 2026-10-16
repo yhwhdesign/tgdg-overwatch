@@ -2,7 +2,7 @@
 const http = require("http");
 function start(port = 3000) {
   const emptyWatch = () => ({ ok: true, checkedAt: new Date().toISOString(), watching: 0, cantTell: 0, ignoredOlder: 0, rules: { installMinutes: 90, serviceMinutes: 60 }, alerts: [] });
-  const state = { sessionValid: true, sessionChecks: 0, jobWatchDown: false, jobWatch: emptyWatch(), watchChecks: 0 };
+  const state = { sessionValid: true, sessionChecks: 0, jobWatchDown: false, requireConsole: false, jobWatch: emptyWatch(), watchChecks: 0 };
   const log = [];
   const server = http.createServer((req, res) => {
     const cookie = req.headers.cookie || "";
@@ -19,6 +19,11 @@ function start(port = 3000) {
     if (req.url === "/__invalidate") { state.sessionValid = false; return json({ ok: true }); }   // the server stops accepting the cookie (a password change) while the cookie stays
     if (req.url === "/__validate") { state.sessionValid = true; return json({ ok: true }); }
     // Job Watch: what the console would report. The tests set it with /__setjobwatch?json=... and break it with /__jobwatchdown.
+    // The console sign-in (CONSOLE_PASSWORD): with /__requireconsole on, the data routes answer 401 until the sign-in cookie exists.
+    if (req.url === "/__requireconsole") { state.requireConsole = true; return json({ ok: true }); }
+    if (req.url === "/__norequireconsole") { state.requireConsole = false; return json({ ok: true }); }
+    if (req.url === "/__consolesignin") { res.writeHead(200, { "content-type": "application/json", "set-cookie": "overwatch_console=ok; Path=/; HttpOnly; SameSite=Lax; Max-Age=3600" }); return res.end(JSON.stringify({ ok: true })); }
+    if (req.url === "/api/job-watch" && state.requireConsole && !cookie.includes("overwatch_console=ok")) { state.watchChecks++; res.writeHead(401, { "content-type": "application/json" }); return res.end(JSON.stringify({ error: "Sign in to the console first." })); }
     if (req.url === "/api/job-watch") { state.watchChecks++; return state.jobWatchDown ? json({ ok: false, checkedAt: new Date().toISOString(), error: "Could not check: Housecall Pro had a problem on its side." }) : json({ ...state.jobWatch, checkedAt: new Date().toISOString() }); }
     if (req.url.startsWith("/__setjobwatch")) { state.jobWatch = { ...emptyWatch(), ...JSON.parse(new URL(req.url, "http://x").searchParams.get("json")) }; state.jobWatchDown = false; return json({ ok: true }); }
     if (req.url === "/__jobwatchdown") { state.jobWatchDown = true; return json({ ok: true }); }
