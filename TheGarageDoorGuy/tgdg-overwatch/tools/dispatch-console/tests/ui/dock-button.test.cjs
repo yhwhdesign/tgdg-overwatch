@@ -38,34 +38,51 @@ const check = (name, ok, detail = "") => { if (ok) passes++; else { failures++; 
 
   // B1 an ordinary tab
   let fakeWin;
-  let calls = setup({ open: () => (fakeWin = { resized: [], moved: [], focused: 0, resizeTo(w, h) { this.resized.push([w, h]); }, moveTo(x, y) { this.moved.push([x, y]); }, focus() { this.focused++; } }) });
+  const mkWin = () => (fakeWin = { closed: false, closeCalls: 0, resized: [], moved: [], focused: 0, resizeTo(w, h) { this.resized.push([w, h]); }, moveTo(x, y) { this.moved.push([x, y]); }, focus() { this.focused++; }, close() { this.closeCalls++; this.closed = true; } });
+  const screenText = () => (document.querySelector("[data-docked-screen]") || {}).textContent || "";
+  let calls = setup({ open: mkWin });
   await mount();
-  check("B1 a normal browser tab shows a 'Dock' button", !!button() && button().textContent === "Dock", document.body.innerHTML);
+  check("B1 a normal browser tab shows a 'Dock' button and no docked screen", !!button() && button().textContent === "Dock" && !document.querySelector("[data-docked-screen]"), document.body.innerHTML);
   await click();
   check("B2 clicking opens ONE window, for this same page, under the dock name", calls.open.length === 1 && calls.open[0][0] === "http://localhost:3000/" && calls.open[0][1] === "overwatch-dock", JSON.stringify(calls.open));
   check("B3 asked for a pop-up window 380 wide, full height, against the right edge (1920-380=1540)", calls.open[0][2] === "popup=yes,left=1540,top=0,width=380,height=1040", calls.open[0][2]);
   check("B4 it also places the new window explicitly (browsers that ignore left/top in the features)", JSON.stringify(fakeWin.resized) === "[[380,1040]]" && JSON.stringify(fakeWin.moved) === "[[1540,0]]" && fakeWin.focused === 1, JSON.stringify(fakeWin));
-  check("B5 it says so, and that this tab can be closed", /Docked in the side window/.test(note()) && /close this tab/.test(note()), note());
-  check("B6 the original tab itself is not moved or resized (a page cannot, and must not try)", calls.selfResize.length === 0 && calls.selfMove.length === 0);
+  check("B5 THIS tab becomes a 'Docked in the side window' screen with an Undock button", /Docked in the side window/.test(screenText()) && [...document.querySelectorAll("[data-docked-screen] button")].map((x) => x.textContent).join() === "Undock", screenText());
+  check("B6 the tab itself is not moved or resized (a page cannot, and must not try)", calls.selfResize.length === 0 && calls.selfMove.length === 0);
+  await act(async () => { [...document.querySelectorAll("[data-docked-screen] button")][0].dispatchEvent(new window.MouseEvent("click", { bubbles: true })); });
+  check("B6b Undock closes the side window and the console is back in this tab", fakeWin.closeCalls === 1 && !document.querySelector("[data-docked-screen]") && button().textContent === "Dock");
+
+  // B6c the side window is closed by the user (its own close button): this tab comes back by itself
+  calls = setup({ open: mkWin });
+  await mount();
+  await click();
+  check("B6c (docked again)", !!document.querySelector("[data-docked-screen]"));
+  fakeWin.closed = true;
+  await act(async () => { await new Promise((r) => setTimeout(r, 1200)); });
+  check("B6d when the side window is closed by hand the docked screen goes away by itself", !document.querySelector("[data-docked-screen]") && button().textContent === "Dock");
 
   // B7 pop-up blocked
   calls = setup({ open: () => null });
   await mount();
   await click();
-  check("B7 a blocked pop-up: a plain explanation, no crash", /blocked the pop-up/.test(note()) && /Allow pop-ups/.test(note()), note());
+  check("B7 a blocked pop-up: a plain explanation, no docked screen, no crash", /blocked the pop-up/.test(note()) && !document.querySelector("[data-docked-screen]"), note());
 
   // B8 the browser refuses to move the new window
-  calls = setup({ open: () => ({ resizeTo() { throw new Error("no"); }, moveTo() { throw new Error("no"); }, focus() {} }) });
+  calls = setup({ open: () => ({ closed: false, resizeTo() { throw new Error("no"); }, moveTo() { throw new Error("no"); }, focus() {}, close() {} }) });
   await mount();
   await click();
-  check("B8 a browser that refuses resizeTo/moveTo does not break the button (the features already placed it)", /Docked in the side window/.test(note()), note());
+  check("B8 a browser that refuses resizeTo/moveTo does not break docking (the features already placed it)", !!document.querySelector("[data-docked-screen]"));
 
   // B9 inside the docked window
   calls = setup({ name: "overwatch-dock" });
+  let closed = 0; window.close = () => { closed++; };
   await mount();
-  check("B9 inside the docked window the button reads 'Re-dock'", button() && button().textContent === "Re-dock");
-  await click();
+  const labels = () => [...document.querySelectorAll("button")].map((x) => x.textContent).join();
+  check("B9 inside the docked window there are two buttons: Re-dock and Undock", labels() === "Re-dock,Undock", labels());
+  await act(async () => { document.querySelectorAll("button")[0].dispatchEvent(new window.MouseEvent("click", { bubbles: true })); });
   check("B10 Re-dock moves THIS window back to the edge and opens nothing", calls.open.length === 0 && JSON.stringify(calls.selfResize) === "[[380,1040]]" && JSON.stringify(calls.selfMove) === "[[1540,0]]", JSON.stringify(calls));
+  await act(async () => { document.querySelectorAll("button")[1].dispatchEvent(new window.MouseEvent("click", { bubbles: true })); });
+  check("B10b Undock in the docked window closes that window", closed === 1);
 
   // B11 the desktop panel / an installed app
   calls = setup({ ua: CHROME + " Electron/44.5.1" });
@@ -76,7 +93,7 @@ const check = (name, ok, detail = "") => { if (ok) passes++; else { failures++; 
   check("B12 in an installed app window there is no button", button() === null);
 
   // B13 a second screen
-  calls = setup({ open: () => ({ resizeTo() {}, moveTo() {}, focus() {} }) });
+  calls = setup({ open: () => ({ closed: false, resizeTo() {}, moveTo() {}, focus() {}, close() {} }) });
   Object.defineProperty(window.screen, "availLeft", { value: 1920, configurable: true });
   Object.defineProperty(window.screen, "availWidth", { value: 2560, configurable: true });
   await mount();
