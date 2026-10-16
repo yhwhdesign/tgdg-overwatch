@@ -28,6 +28,7 @@ const suites = [
   ["unit", "events-client.test.mts"],
   ["unit", "repeat-rules.test.mts"],
   ["unit", "job-watch.test.mts", ALL],
+  ["unit", "dock-window.test.mts"],
   ["unit", "sync-status.test.mts", TWO],
   ["unit", "auto-sync-controller.test.mts", THREE],
   ["scripts", "events-probe.test.mjs"],
@@ -36,11 +37,13 @@ const suites = [
   ["ui", "console-flow.test.cjs"],
   ["ui", "admin-screen.test.cjs"],
   ["ui", "reports-page.test.cjs"],
+  ["ui", "dock-button.test.cjs"],
   ["server", "offered-technicians-route.test.cjs"],
   ["server", "hcp-sync-route.test.cjs"],
   ["server", "refresh-and-status.test.cjs"],
   ["server", "admin-session-route.test.cjs"],
   ["server", "job-watch-route.test.cjs"],
+  ["server", "console-login-and-cron.test.cjs"],
 ];
 
 let failures = 0;

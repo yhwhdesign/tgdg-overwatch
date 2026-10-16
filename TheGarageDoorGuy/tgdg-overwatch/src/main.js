@@ -1,4 +1,4 @@
-const { app, BrowserWindow, WebContentsView, screen, ipcMain, net, session, shell } = require("electron");
+const { app, BrowserWindow, WebContentsView, screen, ipcMain, session, shell } = require("electron");
 const fs = require("node:fs");
 const path = require("node:path");
 const L = require("./shell-logic");
@@ -162,8 +162,10 @@ async function pollJobWatch() {
     let body = null;
     let error = null;
     try {
-      const res = await net.fetch(L.joinUrl(settings.serverUrl, "/api/job-watch"), { headers: { accept: "application/json" }, signal: AbortSignal.timeout(8000) });
+      // Through the same session as the tool pages, so it carries the console sign-in cookie.
+      const res = await session.defaultSession.fetch(L.joinUrl(settings.serverUrl, "/api/job-watch"), { headers: { accept: "application/json" }, signal: AbortSignal.timeout(8000) });
       if (res.ok) body = await res.json();
+      else if (res.status === 401) error = "Sign in on the Dispatch tab to turn Job Watch on.";
       else error = `The console answered HTTP ${res.status}.`;
     } catch {
       error = "Can't reach the console.";

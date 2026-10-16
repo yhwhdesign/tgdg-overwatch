@@ -107,6 +107,14 @@ const finish = async (code = 0) => { try { await session.defaultSession.cookies.
     check("JW20 ...with the reason in its tooltip, and the alert that was already showing stays until clicked or checked again", /can't check right now: Could not check: Housecall Pro had a problem on its side/.test(await ui("document.getElementById('watch-status').title")) && (await bars()).some((x) => x.id === "job_down@90"));
     await setWatch({ watching: 0, alerts: [] }); await wait(2600);
     check("JW21 when the console recovers the status returns to normal and the stale alert goes", (await watchText()) === "No one on a job" && (await bars()).length === 0, `${await watchText()} / ${(await bars()).length}`);
+    // The console is put behind its sign-in: Job Watch says what to do, then recovers by itself once you have signed in on the Dispatch tab.
+    await setWatch({ watching: 1, alerts: [mkAlert("signin@90")] }); await wait(2600);
+    inView(views()[0], "fetch('/__requireconsole')"); await wait(2600);
+    check("JW21b behind the console sign-in and not signed in: the status tooltip says to sign in on the Dispatch tab", /Sign in on the Dispatch tab to turn Job Watch on/.test(await ui("document.getElementById('watch-status').title")), await ui("document.getElementById('watch-status').title"));
+    check("JW21c ...and the alert that was already showing is kept, not wiped", (await bars()).some((x) => x.id === "signin@90"));
+    inView(views()[0], "fetch('/__consolesignin')"); await wait(3200);
+    check("JW21d after signing in (the cookie lands in the panel's own session) Job Watch recovers without a restart", !/Sign in on the Dispatch tab/.test(await ui("document.getElementById('watch-status').title")) && /^1 on a job$/.test(await watchText()), `${await watchText()} / ${await ui("document.getElementById('watch-status').title")}`);
+    inView(views()[0], "fetch('/__norequireconsole')"); await setWatch({ watching: 0, alerts: [] }); await wait(2600);
     const longId = await ui("window.overwatch.dismissJobWatch('x'.repeat(500))"), numId = await ui("window.overwatch.dismissJobWatch(42)"), emptyId = await ui("window.overwatch.dismissJobWatch('')");
     check("JW22 asking the app to dismiss something nonsensical is refused", [longId, numId, emptyId].every((x) => x.ok === false), JSON.stringify([longId, numId, emptyId]));
     check("JW23 (the panel page can ask; tool pages cannot: they have no bridge at all)", (await ui("typeof window.overwatch.dismissJobWatch")) === "function" && (await inView(views()[0], "typeof window.overwatch")) === "undefined");

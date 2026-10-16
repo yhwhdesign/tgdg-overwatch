@@ -54,6 +54,26 @@ check("getJob: a good job comes back", (await hcpApi.getJob("job_ok"))?.id === "
 // ---- the REAL client through the REAL diagnosis, for tomorrow, against that server
 const r = await diagnoseDay({ hcp: hcpApi, timeZone: "America/Chicago", dayBounds: calendarDayBounds, syncWindow: syncWindow(new Date("2026-10-06T15:00:00Z")), mapJob: jobToAppointmentRows,
   loadStored: async () => ({ technicianFound: true, rows: [], latestRowUpdate: null }) }, { name: "Drayton Wilson", date: "2026-10-07" });
+// ---- a dropped connection is retried; a network that stays down fails with the real reason
+{
+  const realFetch = globalThis.fetch;
+  let calls = 0, failFirst = 2;
+  globalThis.fetch = (async (...args: Parameters<typeof fetch>) => {
+    calls++;
+    if (calls <= failFirst) throw Object.assign(new TypeError("fetch failed"), { cause: { code: "ECONNRESET" } });
+    return realFetch(...args);
+  }) as typeof fetch;
+  let ok: any = null;
+  let okErr = ""; try { ok = await hcpApi.listAppointments(J("1")); } catch (e) { okErr = String(e); }
+  check("net: two dropped connections are retried and the call still succeeds", calls >= 3 && ok !== null, `calls=${calls} ${okErr}`);
+
+  calls = 0; failFirst = 99;
+  let err: any = null;
+  try { await hcpApi.listAppointments(J("1")); } catch (e) { err = e; }
+  check("net: a network that stays down gives up after 4 tries", calls === 4, `calls=${calls}`);
+  check("net: the error names the real cause and still reads as 'could not be reached'", /ECONNRESET/.test(String(err?.message)) && /fetch failed/.test(String(err?.message)), String(err?.message));
+  globalThis.fetch = realFetch;
+}
 server.close();
 check("end to end: one archived job and one failing job do NOT stop the report", r.ok === true);
 if (r.ok) {

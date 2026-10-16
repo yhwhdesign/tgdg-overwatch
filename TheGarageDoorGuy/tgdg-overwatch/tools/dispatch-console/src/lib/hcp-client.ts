@@ -32,6 +32,34 @@ export class HcpApiError extends Error {
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
+
+const NETWORK_TRIES = 4; // one try plus three retries, waiting 1, 2 and 4 seconds
+const REQUEST_TIMEOUT_MS = 60_000;
+
+/** The low-level reason behind Node's bare "fetch failed" (ECONNRESET, ENOTFOUND, a timeout...), for the logs. */
+function networkCause(err: unknown): string {
+  const cause = (err as { cause?: { code?: string; message?: string } } | null)?.cause;
+  return cause?.code ?? cause?.message ?? (err as { name?: string } | null)?.name ?? "unknown";
+}
+
+/**
+ * fetch that survives a brief network drop: a dropped connection, a DNS hiccup or one slow answer is retried
+ * (a sync makes hundreds of requests; one blip must not throw the whole run away). Real HTTP answers, including
+ * errors, are returned as they are; only "never got an answer" is retried.
+ */
+async function fetchWithRetry(url: string, init: RequestInit): Promise<Response> {
+  let last: unknown;
+  for (let attempt = 0; attempt < NETWORK_TRIES; attempt++) {
+    try {
+      return await fetch(url, { ...init, signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) });
+    } catch (err) {
+      last = err;
+      if (attempt < NETWORK_TRIES - 1) await sleep(2 ** attempt * 1000);
+    }
+  }
+  throw new TypeError(`fetch failed (${networkCause(last)}) after ${NETWORK_TRIES} tries`);
+}
+
 async function rawGet(path: string): Promise<Response> {
   const key = process.env.HCP_API_KEY;
   if (!key) throw new Error("HCP_API_KEY is not set");
@@ -39,7 +67,7 @@ async function rawGet(path: string): Promise<Response> {
   let lastAuthStatus: number | null = null;
   for (const scheme of schemeOrder()) {
     for (let attempt = 0; ; attempt++) {
-      const res = await fetch(`${BASE_URL}${path}`, {
+      const res = await fetchWithRetry(`${BASE_URL}${path}`, {
         headers: { Authorization: `${scheme} ${key}`, Accept: "application/json" },
         cache: "no-store",
       });
