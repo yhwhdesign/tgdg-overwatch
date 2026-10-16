@@ -13,7 +13,7 @@
   --color-brand-orange: #e97530;
   --color-brand-orange-dark: #c85f22;
   --color-brand-gray: #6b6b66;
-  --font-sans: var(--font-archivo);
+  --font-sans: "Archivo Variable";
 }
 
 body {
