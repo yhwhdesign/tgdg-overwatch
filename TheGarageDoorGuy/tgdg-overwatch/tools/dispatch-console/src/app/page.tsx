@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import DockButton from "./DockButton";
 
 type CallType = "residential" | "commercial";
 const CALL_TYPES: CallType[] = ["residential", "commercial"];
@@ -542,9 +543,12 @@ export default function DispatchConsole() {
     <main className="flex min-h-screen flex-col bg-brand-cream">
       <div className="bg-brand-black px-6 py-8">
         <div className="mx-auto max-w-lg">
-          <p className="text-xs font-bold uppercase tracking-widest text-brand-orange">
-            The Garage Door Guy Corp
-          </p>
+          <div className="flex items-start justify-between gap-3">
+            <p className="text-xs font-bold uppercase tracking-widest text-brand-orange">
+              The Garage Door Guy Corp
+            </p>
+            <DockButton />
+          </div>
           <h1 className="mt-2 text-2xl font-black uppercase leading-tight text-white">
             Dispatch console
           </h1>
