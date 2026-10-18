@@ -111,18 +111,19 @@ eq("F11 the input is never modified", JSON.stringify(input), copy);
 // ================= G. who sees what =================
 const REG = require("../../src/tools.js").TOOLS;
 const ids = (list) => list.map((t) => t.id);
-eq("G1 the real registry: Dispatch, Admin and Reports", ids(REG), ["dispatch", "admin", "reports"]);
-eq("G2 Dispatch and Admin can never be hidden; Reports is admin-only; only Admin hosts the settings", [REG.map((t) => !!t.core), REG.map((t) => !!t.adminOnly), REG.map((t) => !!t.hostsPanelSettings)], [[true, true, false], [false, false, true], [false, true, false]].map((x, i) => (i === 2 ? [false, true, false] : x)).map((x, i) => (i === 2 ? [false, true, false] : x)));
-eq("G3 signed OUT: Reports is not listed", ids(L.visibleTools(REG, [], false)), ["dispatch", "admin"]);
-eq("G4 signed IN: Reports is listed", ids(L.visibleTools(REG, [], true)), ["dispatch", "admin", "reports"]);
+eq("G1 the real registry: Dispatch, Admin, Estimates and Reports", ids(REG), ["dispatch", "admin", "estimates", "reports"]);
+eq("G2 Dispatch and Admin can never be hidden; Estimates is for everyone and can be hidden; Reports is admin-only; only Admin hosts the settings", [REG.map((t) => !!t.core), REG.map((t) => !!t.adminOnly), REG.map((t) => !!t.hostsPanelSettings)], [[true, true, false, false], [false, false, false, true], [false, true, false, false]]);
+eq("G3 signed OUT: Reports is not listed (Estimates is)", ids(L.visibleTools(REG, [], false)), ["dispatch", "admin", "estimates"]);
+eq("G4 signed IN: Reports is listed", ids(L.visibleTools(REG, [], true)), ["dispatch", "admin", "estimates", "reports"]);
 eq("G5 only an exact true counts as signed in (undefined, 'yes', 1 do not)", [undefined, null, "yes", 1, 0, ""].map((v) => ids(L.visibleTools(REG, [], v)).includes("reports")), [false, false, false, false, false, false]);
 eq("G6 a hidden tool is not listed", ids(L.visibleTools([{ id: "a" }, { id: "b" }], ["b"], false)), ["a"]);
-eq("G7 a core tool cannot be hidden, even if the settings file says so", ids(L.visibleTools(REG, ["dispatch", "admin"], false)), ["dispatch", "admin"]);
-eq("G8 an admin-only tool stays unlisted even if it is not hidden and no flag is given", ids(L.visibleTools(REG, [])), ["dispatch", "admin"]);
+eq("G7 a core tool cannot be hidden, even if the settings file says so", ids(L.visibleTools(REG, ["dispatch", "admin"], false)), ["dispatch", "admin", "estimates"]);
+eq("G8 an admin-only tool stays unlisted even if it is not hidden and no flag is given", ids(L.visibleTools(REG, [])), ["dispatch", "admin", "estimates"]);
+eq("G8b Estimates can be hidden per machine", ids(L.visibleTools(REG, ["estimates"], false)), ["dispatch", "admin"]);
 eq("G9 no tools, no hidden list: fine", [L.visibleTools([], [], true), L.visibleTools(undefined, undefined, true)], [[], []]);
 const adminTool = REG.find((t) => t.id === "admin"), dispatchTool = REG.find((t) => t.id === "dispatch"), reportsTool = REG.find((t) => t.id === "reports");
 eq("G10 the settings cog: only a signed-in admin, on the Admin screen", [L.settingsButtonVisible(true, adminTool), L.settingsButtonVisible(true, dispatchTool), L.settingsButtonVisible(true, reportsTool), L.settingsButtonVisible(false, adminTool), L.settingsButtonVisible(undefined, adminTool), L.settingsButtonVisible("yes", adminTool), L.settingsButtonVisible(true, null)], [true, false, false, false, false, false, false]);
-check("G11 the real tab layout still works with Reports in the list", L.layoutTabs(L.visibleTools(REG, [], true), "reports", 340).visible.length === 3);
+check("G11 the real tab layout still works with Reports in the list", L.layoutTabs(L.visibleTools(REG, [], true), "reports", 340).visible.length === 4);
 
 // ================= H. Job Watch alerts =================
 for (const [minutes, text] of [[0, "0m"], [1, "1m"], [59, "59m"], [60, "1h"], [61, "1h 1m"], [90, "1h 30m"], [100, "1h 40m"], [119, "1h 59m"], [120, "2h"], [1440, "24h"], [-5, "0m"], [NaN, "0m"], [undefined, "0m"], ["45", "45m"], [59.6, "1h"], [null, "0m"]]) eq(`H1 formatDuration(${minutes}) is ${text}`, L.formatDuration(minutes), text);
@@ -204,6 +205,19 @@ eq("U4 alerts and completions keep a safe link and drop an unsafe one", [
   L.cleanAlerts([{ ...good, url: JOB }])[0].url, L.cleanAlerts([{ ...good, url: "https://evil.com/" }])[0].url,
   L.cleanCompletions([{ ...doneGood, url: JOB }])[0].url, L.cleanCompletions([{ ...doneGood, url: "javascript:1" }])[0].url,
 ], [JOB, null, JOB, null]);
+
+
+// ---- estimate bars: the same two kinds of bar, worded for estimates
+const est = { id: "csr_1@3d", kind: "estimate", label: "Estimate #8802 ($990)", techs: ["Blake Tech"], startedAt: new Date(NOWMS - 4 * 1440 * 60000).toISOString(), startedLabel: "Oct 8", minutesOnJob: 4 * 1440, limitMinutes: 3 * 1440, url: JOB };
+const em = L.alertMessage(est, NOWMS);
+eq("V1 a waiting estimate: how many days with no answer", em.title, "Estimate #8802 ($990) has had no answer for 4 days");
+eq("V2 ...who and when it was created, and what is missing", em.detail, "Created Oct 8 (Blake Tech). No option is approved or declined yet. Click to dismiss.");
+eq("V3 one day is singular, and no tech is simply left out", [L.alertMessage({ ...est, minutesOnJob: 1440, startedAt: new Date(NOWMS - 1440 * 60000).toISOString() }, NOWMS).title, L.alertMessage({ ...est, techs: [] }, NOWMS).detail], ["Estimate #8802 ($990) has had no answer for 1 day", "Created Oct 8. No option is approved or declined yet. Click to dismiss."]);
+eq("V4 the 'estimate' kind survives cleaning, for alerts and finished bars", [L.cleanAlerts([est])[0].kind, L.cleanCompletions([{ ...doneGood, kind: "estimate" }])[0].kind], ["estimate", "estimate"]);
+eq("V5 an unknown kind still becomes 'service'", [L.cleanAlerts([{ ...est, kind: "weird" }])[0].kind, L.cleanCompletions([{ ...doneGood, kind: "weird" }])[0].kind], ["service", "service"]);
+const ec = { ...doneGood, kind: "estimate", label: "Estimate #8801", notes: ["Steel Back: $1,500"] };
+eq("V6 a finished estimate lists the options as its notes", [L.completionMessage(ec).title, L.completionMessage(ec).notes, L.completionMessage(ec).hasNotes], ['Alex Tech finished "Estimate #8801"', "Steel Back: $1,500", true]);
+eq("V7 no options yet / none added: worded for estimates, not notes", [L.completionMessage({ ...ec, notes: [], notesPending: true }).notes, L.completionMessage({ ...ec, notes: [] }).notes], ["No options on it yet. They will appear here once the tech adds them.", "No options were added."]);
 
 console.log(`\n${passes} passed, ${failures} failed`);
 process.exit(failures ? 1 : 0);

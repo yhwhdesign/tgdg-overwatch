@@ -19,6 +19,7 @@
   const TOOLS = [
     { id: "dispatch", name: "Dispatch Console", shortName: "Dispatch", glyph: "D", path: "/", core: true },
     { id: "admin", name: "Admin", shortName: "Admin", glyph: "A", path: "/admin", core: true, hostsPanelSettings: true },
+    { id: "estimates", name: "Estimates", shortName: "Estimates", glyph: "E", path: "/estimates" },
     { id: "reports", name: "Reports", shortName: "Reports", glyph: "R", path: "/reports", adminOnly: true },
   ];
   return { TOOLS };
