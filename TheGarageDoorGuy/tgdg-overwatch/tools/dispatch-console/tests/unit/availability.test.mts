@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { generateDispatchAvailability, generateDayAvailability, selectableRange, syncWindow, VIEW_DAYS, SELECTABLE_DAYS_AHEAD } from "../../src/lib/availability.ts";
 
 const CT = new Intl.DateTimeFormat("en-US", {

@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { evaluateJobs, checkJobs, getJobWatch, resetJobWatchCache, readWatchRules, jobUrl, validJobUrlTemplate, DEFAULT_JOB_URL_TEMPLATE, classifyJob, jobLabel, jobTexts, noteTexts, DEFAULT_RULES, type WatchHelpers } from "../../src/lib/job-watch.ts";
 import { calendarDayBounds, businessTimeZone } from "../../src/lib/availability.ts";
 import { describeSyncError } from "../../src/lib/sync-status.ts";

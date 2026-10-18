@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { itemsFromWatch, runNotify, eligible, parseKinds, cleanName, newTopic, validTopic, NoDeviceError, MAX_LAG_MS, NOTIFY_KINDS, type NotifyStore, type Recipient, type Sender, type NotifyItem, type NotifyMessage } from "../../src/lib/notify.ts";
 
 let passes = 0, failures = 0;

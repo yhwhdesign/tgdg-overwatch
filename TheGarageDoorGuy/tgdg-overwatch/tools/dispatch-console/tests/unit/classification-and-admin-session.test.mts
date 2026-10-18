@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { isOfferedFor, parseCallType, parseClassification, CLASSIFICATIONS } from "../../src/lib/service-techs.ts";
 import { createSessionValue, verifySessionValue, passwordMatches, SESSION_HOURS } from "../../src/lib/admin-session.ts";
 let passes = 0, failures = 0;

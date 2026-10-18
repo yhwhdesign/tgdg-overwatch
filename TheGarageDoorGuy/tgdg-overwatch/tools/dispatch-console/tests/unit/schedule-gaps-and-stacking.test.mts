@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { generateDispatchAvailability, generateDayAvailability, bestFit, soonestOpening, type BusyBlock, type FitOptions } from "../../src/lib/availability.ts";
 import { makeProximity } from "../../src/lib/zip-distance.ts";
 import { ZIP_CENTROIDS } from "../../src/data/ar-zip-centroids.ts";

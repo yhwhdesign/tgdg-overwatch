@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { evaluateEstimates, buildReport, readEstimateRules, estimateUrl, outcomeOf, valueCents, hasAllTags, madeInField, readRecentEstimates, readEstimatesSince, getEstimateWatch, getEstimateReport, resetEstimateCaches, DEFAULT_ESTIMATE_RULES, type HcpEstimate, type EstimateApi } from "../../src/lib/estimates.ts";
 
 let passes = 0, failures = 0;

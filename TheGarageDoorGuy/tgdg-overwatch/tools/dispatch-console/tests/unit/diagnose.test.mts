@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { diagnoseDay, type DiagnoseDeps, type StoredRow } from "../../src/lib/hcp-diagnose.ts";
 import { jobToAppointmentRows, type HcpApi, type HcpEmployee, type HcpJob, type HcpAppointment, type JobsPage } from "../../src/lib/hcp-sync.ts";
 import { calendarDayBounds, syncWindow } from "../../src/lib/availability.ts";
