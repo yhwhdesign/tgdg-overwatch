@@ -1,6 +1,6 @@
 // Phone notifications: the rules and the orchestration. Pure logic plus two small interfaces (a store and a sender), so
 // everything here is tested with in-memory fakes. The real store is notify-store.ts (the database) and the real sender
-// is ntfySender below (a free push service; each person subscribes once in the ntfy app or its web page).
+// is push.ts (free web push to the phones that opened the person's setup link and turned alerts on).
 //
 // What goes out is deliberately short and never carries a customer's name, address, phone or a job's notes: an alert
 // says WHO (technician), WHAT ("Estimate #8802 ($990)"), WHEN, and carries a link that opens the ticket in Housecall Pro.
@@ -21,7 +21,7 @@ export const KIND_LABEL: Record<NotifyKind, string> = {
 export interface Recipient {
   id: string;
   name: string;
-  /** The private channel name this person subscribes to (long and random: knowing it is what lets you read the alerts). */
+  /** The person's private join code (long and random): it is the secret in their setup link and QR code. */
   topic: string;
   kinds: NotifyKind[];
   enabled: boolean;
@@ -55,8 +55,16 @@ export interface NotifyStore {
   prune(olderThan: Date): Promise<void>;
 }
 
+/** Thrown by a sender when the person has no phone connected yet: not a failure, the event is simply not claimed. */
+export class NoDeviceError extends Error {
+  constructor() {
+    super("no phone connected");
+    this.name = "NoDeviceError";
+  }
+}
+
 export interface Sender {
-  send(recipient: Pick<Recipient, "topic" | "name">, message: NotifyMessage): Promise<void>;
+  send(recipient: Pick<Recipient, "id" | "name">, message: NotifyMessage): Promise<void>;
 }
 
 // ---- people --------------------------------------------------------------------------------------------
@@ -101,8 +109,6 @@ interface WatchLike {
 const rec = (v: unknown): Record<string, unknown> => (v && typeof v === "object" ? (v as Record<string, unknown>) : {});
 const str = (v: unknown, max = 80): string => (typeof v === "string" ? v.slice(0, max) : "");
 const num = (v: unknown): number => (Number.isFinite(Number(v)) ? Number(v) : 0);
-// HTTP header values must be plain ASCII: anything else is dropped from a title (the body is sent as UTF-8).
-const ascii = (s: string) => s.replace(/[^\x20-\x7e]/g, "").replace(/\s+/g, " ").trim();
 
 function names(techs: unknown): string {
   const list = (Array.isArray(techs) ? techs : []).filter((t): t is string => typeof t === "string" && t.trim().length > 0).slice(0, 6);
@@ -210,12 +216,14 @@ export interface NotifyRunResult {
   sent: number;
   failed: number;
   alreadySent: number;
+  /** Events held back because that person has no phone connected yet. */
+  noDevice: number;
 }
 
 export async function runNotify(options: { items: NotifyItem[]; store: NotifyStore; sender: Sender; now?: () => Date; log?: (m: string) => void }): Promise<NotifyRunResult> {
   const now = (options.now ?? (() => new Date()))();
   const log = options.log ?? (() => {});
-  const result: NotifyRunResult = { recipients: 0, items: options.items.length, sent: 0, failed: 0, alreadySent: 0 };
+  const result: NotifyRunResult = { recipients: 0, items: options.items.length, sent: 0, failed: 0, alreadySent: 0, noDevice: 0 };
   const recipients = (await options.store.listRecipients()).filter((r) => r.enabled && r.kinds.length > 0);
   result.recipients = recipients.length;
   if (recipients.length > 0) {
@@ -232,6 +240,10 @@ export async function runNotify(options: { items: NotifyItem[]; store: NotifySto
           result.sent += 1;
         } catch (err) {
           await options.store.release(key).catch(() => {});
+          if (err instanceof NoDeviceError) {
+            result.noDevice += 1;
+            continue;
+          }
           result.failed += 1;
           log(`[notify] could not send to ${who.name}: ${err instanceof Error ? err.message.slice(0, 120) : "unknown"}`);
         }
@@ -242,41 +254,9 @@ export async function runNotify(options: { items: NotifyItem[]; store: NotifySto
   return result;
 }
 
-// ---- the sender: ntfy (free push; https://docs.ntfy.sh/publish/) ----------------------------------------
-
-export function ntfyServer(env: Record<string, string | undefined> = process.env): string {
-  const raw = (env.NTFY_SERVER ?? "").trim().replace(/\/+$/, "");
-  return /^https:\/\/[^\s/]+$/i.test(raw) ? raw : "https://ntfy.sh";
-}
-
-export function ntfyRequest(server: string, topic: string, message: NotifyMessage, token?: string): { url: string; init: RequestInit } {
-  if (!validTopic(topic)) throw new Error("This person has no valid notification channel.");
-  const headers: Record<string, string> = {
-    Title: ascii(message.title).slice(0, 80) || "Notification",
-    Priority: String(message.priority),
-    Tags: message.tag.replace(/[^a-z0-9_,-]/gi, ""),
-  };
-  if (message.url) headers.Click = message.url;
-  if (token) headers.Authorization = `Bearer ${token}`;
-  return { url: `${server}/${topic}`, init: { method: "POST", headers, body: message.body.slice(0, 1000) } };
-}
-
-export function ntfySender(options: { server?: string; token?: string; fetchImpl?: typeof fetch } = {}): Sender {
-  const server = options.server ?? ntfyServer();
-  const token = options.token ?? (process.env.NTFY_TOKEN || undefined);
-  const doFetch = options.fetchImpl ?? fetch;
-  return {
-    async send(recipient, message) {
-      const { url, init } = ntfyRequest(server, recipient.topic, message, token);
-      const res = await doFetch(url, { ...init, signal: AbortSignal.timeout(10_000) });
-      if (!res.ok) throw new Error(`the notification service answered ${res.status}`);
-    },
-  };
-}
-
 export const TEST_MESSAGE: NotifyMessage = {
   title: "Test from TGDG Overwatch",
-  body: "If you can read this, notifications reach this phone. Tap to open Housecall Pro.",
+  body: "If you can read this, alerts reach this phone. Tap to open Housecall Pro.",
   url: "https://pro.housecallpro.com/",
   priority: 3,
   tag: "bell",

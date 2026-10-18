@@ -43,6 +43,7 @@ export function safeNextPath(next: string | null | undefined): string {
  *  - the Housecall Pro webhook (checks its signature)
  *  - the scheduled refresh (needs CRON_SECRET)
  *  - the Admin screen and its routes (their own password)
+ *  - a person's phone-alert setup page and its routes (the private code in their link), and the alerts service worker
  *  - the framework's own files
  */
 export function isSelfProtectedPath(pathname: string): boolean {
@@ -54,6 +55,9 @@ export function isSelfProtectedPath(pathname: string): boolean {
     pathname === "/api/cron" || pathname.startsWith("/api/cron/") ||
     pathname === "/admin" || pathname.startsWith("/admin/") ||
     pathname === "/api/admin" || pathname.startsWith("/api/admin/") ||
+    pathname.startsWith("/join/") ||
+    pathname === "/api/push" || pathname.startsWith("/api/push/") ||
+    pathname === "/sw.js" ||
     pathname.startsWith("/_next/") ||
     pathname === "/favicon.ico" ||
     /^\/[^/]+\.(svg|png|jpg|jpeg|webp|ico|txt|woff2?)$/i.test(pathname) // the few files in /public

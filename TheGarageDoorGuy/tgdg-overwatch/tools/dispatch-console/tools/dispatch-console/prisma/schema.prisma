@@ -1,0 +1,122 @@
+generator client {
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "rhel-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Technician {
+  id             String   @id @default(cuid())
+  hcpEmployeeId  String   @unique
+  name           String
+  active         Boolean  @default(true)
+  // The person's role in Housecall Pro (admin / field tech / office staff), kept fresh by the sync.
+  hcpRole        String?
+  // How the dispatch console offers this person, set on the Admin screen:
+  // "residential", "commercial" or "hybrid" (both). Empty = never offered.
+  classification String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  zipCoverage    ZipCoverage[]
+  appointments   Appointment[]
+}
+
+// UNUSED. Zip codes no longer limit who is offered: any technician marked residential,
+// commercial or hybrid on the Admin screen is offered in every zip, and the customer's zip is
+// only used to find nearby calls. Kept so no migration or data is lost; safe to remove later.
+model ZipCoverage {
+  id            String     @id @default(cuid())
+  zip           String
+  technicianId  String
+  technician    Technician @relation(fields: [technicianId], references: [id])
+  createdAt     DateTime   @default(now())
+
+  @@unique([zip, technicianId])
+  @@index([zip])
+}
+
+// One row per (HCP job, assigned technician): a job with two techs blocks both calendars.
+model Appointment {
+  id            String     @id @default(cuid())
+  hcpJobId      String
+  technicianId  String
+  technician    Technician @relation(fields: [technicianId], references: [id])
+  startTime     DateTime
+  endTime       DateTime
+  status        String
+  zip           String?
+  // "job" or "event". Events are Housecall Pro calendar items that block a person's time
+  // (an errand, time off, a meeting). For events hcpJobId holds "event:<id>".
+  kind          String     @default("job")
+  // Short staff-typed title, kept for events only so a dispatcher can see WHY someone is blocked.
+  label         String?
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+
+  @@unique([hcpJobId, technicianId])
+  @@index([technicianId, startTime])
+  @@index([hcpJobId])
+}
+
+model WebhookEvent {
+  id          String   @id @default(cuid())
+  hcpEventId  String   @unique
+  receivedAt  DateTime @default(now())
+  processed   Boolean  @default(false)
+  payload     Json
+}
+
+// When the Housecall Pro data was last refreshed, one row per part ("jobs" and "events"), so the console
+// can say how fresh the schedule is and whether the latest attempt failed. Updated by every sync.
+model SyncStatus {
+  key            String    @id
+  lastAttemptAt  DateTime
+  lastSuccessAt  DateTime?
+  // A short, safe category ("the database could not be reached") that any console user may see.
+  lastError      String?
+  // The fuller error text, shown only on the Admin screen.
+  lastErrorDetail String?
+  // "auto", "startup", "manual"
+  lastTrigger    String?
+  lastDurationMs Int?
+}
+
+// People who get phone notifications (set on the Admin screen). `topic` is a long random private channel name the
+// person subscribes to in the ntfy app; `kinds` are the alert types they chose.
+model NotifyRecipient {
+  id            String             @id @default(cuid())
+  name          String
+  // The person's private join code: long and random. It is the secret in their setup link/QR code (/join/<code>).
+  topic         String             @unique
+  kinds         String[]           @default([])
+  enabled       Boolean            @default(true)
+  createdAt     DateTime           @default(now())
+  updatedAt     DateTime           @updatedAt
+  subscriptions PushSubscription[]
+}
+
+// One phone (or computer) that turned alerts on from a person's setup page. A person can have several.
+model PushSubscription {
+  id          String          @id @default(cuid())
+  recipientId String
+  recipient   NotifyRecipient @relation(fields: [recipientId], references: [id], onDelete: Cascade)
+  endpoint    String          @unique
+  p256dh      String
+  auth        String
+  createdAt   DateTime        @default(now())
+
+  @@index([recipientId])
+}
+
+// "This person was already told about this event" (key = recipientId|eventId), so nobody is told twice.
+// Rows older than three days are deleted on every run.
+model NotifySent {
+  key    String   @id
+  sentAt DateTime @default(now())
+
+  @@index([sentAt])
+}

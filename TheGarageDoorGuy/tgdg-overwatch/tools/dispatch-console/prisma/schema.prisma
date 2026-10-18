@@ -88,13 +88,28 @@ model SyncStatus {
 // People who get phone notifications (set on the Admin screen). `topic` is a long random private channel name the
 // person subscribes to in the ntfy app; `kinds` are the alert types they chose.
 model NotifyRecipient {
-  id        String   @id @default(cuid())
-  name      String
-  topic     String   @unique
-  kinds     String[] @default([])
-  enabled   Boolean  @default(true)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id            String             @id @default(cuid())
+  name          String
+  // The person's private join code: long and random. It is the secret in their setup link/QR code (/join/<code>).
+  topic         String             @unique
+  kinds         String[]           @default([])
+  enabled       Boolean            @default(true)
+  createdAt     DateTime           @default(now())
+  updatedAt     DateTime           @updatedAt
+  subscriptions PushSubscription[]
+}
+
+// One phone (or computer) that turned alerts on from a person's setup page. A person can have several.
+model PushSubscription {
+  id          String          @id @default(cuid())
+  recipientId String
+  recipient   NotifyRecipient @relation(fields: [recipientId], references: [id], onDelete: Cascade)
+  endpoint    String          @unique
+  p256dh      String
+  auth        String
+  createdAt   DateTime        @default(now())
+
+  @@index([recipientId])
 }
 
 // "This person was already told about this event" (key = recipientId|eventId), so nobody is told twice.

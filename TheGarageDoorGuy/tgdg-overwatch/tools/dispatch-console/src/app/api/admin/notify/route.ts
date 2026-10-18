@@ -1,25 +1,28 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { adminGate } from "@/lib/admin-auth";
-import { cleanName, KIND_LABEL, newTopic, NOTIFY_KINDS, ntfyServer, parseKinds } from "@/lib/notify";
+import { cleanName, KIND_LABEL, newTopic, NOTIFY_KINDS, parseKinds } from "@/lib/notify";
+import { pushConfig } from "@/lib/push";
 import { toRecipient } from "@/lib/notify-store";
 import { prisma } from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
 
 // The people on the phone-notification list (Admin screen). Everything here is admin-only.
-function shape(row: Parameters<typeof toRecipient>[0]) {
+type ListRow = Parameters<typeof toRecipient>[0] & { _count?: { subscriptions: number } };
+function shape(row: ListRow) {
   const r = toRecipient(row);
-  return { id: r.id, name: r.name, topic: r.topic, kinds: r.kinds, enabled: r.enabled };
+  // "topic" is the person's private join code: the secret in their setup link. "devices" is how many phones turned alerts on.
+  return { id: r.id, name: r.name, topic: r.topic, kinds: r.kinds, enabled: r.enabled, devices: row._count?.subscriptions ?? 0 };
 }
 
 export async function GET(request: NextRequest) {
   const denied = adminGate(request);
   if (denied) return denied;
-  const rows = await prisma.notifyRecipient.findMany({ orderBy: { createdAt: "asc" } });
+  const rows = await prisma.notifyRecipient.findMany({ orderBy: { createdAt: "asc" }, include: { _count: { select: { subscriptions: true } } } });
   return NextResponse.json({
     people: rows.map(shape),
     kinds: NOTIFY_KINDS.map((k) => ({ id: k, label: KIND_LABEL[k] })),
-    server: ntfyServer(),
+    pushReady: pushConfig() !== null,
     schedulerReady: Boolean(process.env.CRON_SECRET),
   });
 }
@@ -33,7 +36,7 @@ async function readBody(request: NextRequest): Promise<Record<string, unknown> |
   }
 }
 
-// Body: { name: string, kinds?: string[] }  -> a new person with their own private channel.
+// Body: { name: string, kinds?: string[] }  -> a new person with their own private setup link.
 export async function POST(request: NextRequest) {
   const denied = adminGate(request);
   if (denied) return denied;
