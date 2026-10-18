@@ -64,6 +64,28 @@ const SRC = path.join(__dirname, "../../src");
   check("J1b it greets the person by name and never shows the private code", /For Jasen/.test(p.text()) && !p.text().includes(CODE));
   await p.unmount();
 
+  // ---- iPhone, but not Safari
+  const CHROME_IOS = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/124.0.6367.88 Mobile/15E148 Safari/604.1";
+  const FACEBOOK = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148 [FBAN/FBIOS;FBAV/450.0;FBBV/1;FBDV/iPhone14,2;FBMD/iPhone;FBSN/iOS;FBSV/17.4;FBLC/en_US]";
+  const WEBVIEW = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148";
+  for (const [label, ua] of [["Chrome", CHROME_IOS], ["the Facebook app", FACEBOOK], ["an in-app web view (Messages, Gmail...)", WEBVIEW]]) {
+    p = await phone({ ua, push: false });
+    check(`J1c an iPhone in ${label} is told to open the page in Safari, with the link and a Copy link button, and no Home Screen steps yet`, p.phase() === "open-safari" && /Open this page in Safari/.test(p.text()) && !!p.w.document.querySelector('[data-action="copy"]') && p.w.document.querySelector('[data-field="link"]').textContent.includes("/join/") && !/Tap the Share button/.test(p.text()), p.text());
+    await p.unmount();
+  }
+  p = await phone({ ua: CHROME_IOS, push: false });
+  let copied = null; Object.defineProperty(p.w.navigator, "clipboard", { value: { writeText: async (t) => { copied = t; } }, configurable: true });
+  await p.click('[data-action="copy"]');
+  check("J1d Copy link copies this page's address and says to paste it in Safari", copied === p.w.location.href && /paste it in the address bar/.test(p.text()), String(copied));
+  Object.defineProperty(p.w.navigator, "clipboard", { value: { writeText: async () => { throw new Error("no"); } }, configurable: true });
+  await p.click('[data-action="copy"]');
+  check("J1e if copying is blocked it says to press and hold the link instead", /press and hold/i.test(p.text()));
+  await p.unmount();
+  // the installed Home Screen app has no "Safari" in its user agent: it must NOT be sent back to Safari
+  p = await phone({ ua: WEBVIEW, standalone: true });
+  check("J1f the installed Home Screen app (which looks like a web view) goes on to the button, not back to Safari", p.phase() === "ready", p.text());
+  await p.unmount();
+
   // ---- the installed iPhone app: turn on
   p = await phone({ ua: IPHONE, standalone: true });
   check("J2 the installed iPhone app offers the Turn on alerts button", p.phase() === "ready" && !!p.w.document.querySelector('[data-action="on"]'), p.text());
@@ -117,6 +139,7 @@ const SRC = path.join(__dirname, "../../src");
   // ---- the helpers on their own
   const env = (ua, extra = {}) => client.detectEnv({ navigator: { userAgent: ua, platform: "Linux", maxTouchPoints: 0, ...extra.navigator }, matchMedia: extra.matchMedia, PushManager: extra.push ? function () {} : undefined, Notification: extra.push ? function () {} : undefined });
   check("K1 iPhone and iPad are iOS; Android is not", env(IPHONE).ios === true && env("Mozilla/5.0 (iPad; CPU OS 17_0 like Mac OS X)").ios === true && env(ANDROID).ios === false);
+  check("K1b Safari is told apart from Chrome, Firefox, Edge and in-app browsers", env(IPHONE).safari === true && env("Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) FxiOS/124.0 Mobile/15E148 Safari/605.1.15").safari === false && env("Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) EdgiOS/124.0 Mobile/15E148 Safari/605.1.15").safari === false && env("Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148 Instagram 300.0").safari === false);
   check("K2 an iPad that calls itself a Mac (touch screen) is still iOS; a real Mac is not", env("Mozilla/5.0 (Macintosh; Intel Mac OS X)", { navigator: { platform: "MacIntel", maxTouchPoints: 5 } }).ios === true && env("Mozilla/5.0 (Macintosh; Intel Mac OS X)", { navigator: { platform: "MacIntel", maxTouchPoints: 0 } }).ios === false);
   check("K3 standalone is seen from navigator.standalone or the display-mode query", env(IPHONE, { navigator: { standalone: true } }).standalone === true && env(ANDROID, { matchMedia: () => ({ matches: true }) }).standalone === true && env(ANDROID, { matchMedia: () => ({ matches: false }) }).standalone === false);
   check("K4 supported needs service workers, PushManager and Notification", env(ANDROID, { navigator: { serviceWorker: {} }, push: true }).supported === true && env(ANDROID, { navigator: { serviceWorker: {} } }).supported === false && env(ANDROID, { push: true }).supported === false);

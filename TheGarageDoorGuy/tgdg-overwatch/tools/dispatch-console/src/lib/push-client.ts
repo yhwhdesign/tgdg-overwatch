@@ -10,19 +10,25 @@ export interface BrowserLike {
 export interface JoinEnv {
   /** iPhone or iPad: alerts only work from the Home Screen icon there. */
   ios: boolean;
+  /** Real Safari. Only Safari reliably offers "Add to Home Screen" for this; Chrome, Facebook, Gmail, Messages previews and other in-app browsers do not. */
+  safari: boolean;
   /** Running as the installed home-screen app. */
   standalone: boolean;
   /** This browser can do web push at all. */
   supported: boolean;
 }
 
+// Other browsers and in-app web views on an iPhone. Real Safari has "Version/" and "Safari/" in its user agent and none of these.
+const NOT_SAFARI = /CriOS|FxiOS|EdgiOS|OPiOS|OPT\/|GSA\/|DuckDuckGo|Brave|FBAN|FBAV|FB_IAB|Instagram|Line\/|MicroMessenger|Snapchat|Twitter|LinkedIn|Pinterest|TikTok|Messenger/;
+
 export function detectEnv(w: BrowserLike): JoinEnv {
   const ua = w.navigator.userAgent ?? "";
   // iPadOS reports itself as a Mac but has a touch screen.
   const ios = /iPhone|iPad|iPod/.test(ua) || (w.navigator.platform === "MacIntel" && (w.navigator.maxTouchPoints ?? 0) > 1);
+  const safari = /Safari\//.test(ua) && /Version\//.test(ua) && !NOT_SAFARI.test(ua);
   const standalone = w.navigator.standalone === true || (typeof w.matchMedia === "function" && w.matchMedia("(display-mode: standalone)").matches);
   const supported = Boolean(w.navigator.serviceWorker) && Boolean(w.PushManager) && Boolean(w.Notification);
-  return { ios, standalone, supported };
+  return { ios, safari, standalone, supported };
 }
 
 export function urlBase64ToUint8Array(value: string): Uint8Array {
@@ -33,7 +39,7 @@ export function urlBase64ToUint8Array(value: string): Uint8Array {
   return out;
 }
 
-export type Phase = "checking" | "install" | "unsupported" | "ready" | "working" | "on" | "blocked" | "error";
+export type Phase = "checking" | "install" | "open-safari" | "unsupported" | "ready" | "working" | "on" | "blocked" | "error";
 
 export interface PushDeps {
   code: string;
