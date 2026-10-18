@@ -191,10 +191,10 @@ export default function NotifyPanel({ techNames, onSignedOut }: { techNames: str
                 <div data-section="setup" className="ml-[52px] rounded-md border border-brand-black/10 bg-white p-3 text-xs text-brand-gray">
                   <p className="font-bold text-brand-black">Set up {p.name}&apos;s phone (once):</p>
                   <ol className="mt-1 list-decimal pl-4">
-                    <li>Install the free <span className="font-bold">ntfy</span> app (iPhone or Android) and open it once.</li>
-                    <li>Point the phone&apos;s <span className="font-bold">camera</span> at this code and tap the link it shows. The app opens already subscribed.</li>
+                    <li>Point the phone&apos;s <span className="font-bold">camera</span> at this code and tap the link. It opens this person&apos;s private channel page.</li>
+                    <li>On that page tap <span className="font-bold">Subscribe</span> / allow notifications. iPhone: tap Share, then <span className="font-bold">Add to Home Screen</span>, and open it from the new icon first. Or use the free ntfy app and type the channel name below.</li>
                   </ol>
-                  <div className="mt-2"><Qr value={`ntfy://${data.server.replace(/^https?:\/\//, "")}/${p.topic}`} label={`QR code to subscribe ${p.name}'s phone`} /></div>
+                  <div className="mt-2"><Qr value={`${data.server}/${p.topic}`} label={`QR code to subscribe ${p.name}'s phone`} /></div>
                   <p className="mt-2">Camera not working? In the app tap <span className="font-bold">+</span> (subscribe to topic), type this channel name, and tap Subscribe:</p>
                   <p data-field="topic" className="mt-1 select-all break-all rounded bg-brand-cream px-2 py-1 font-mono text-[11px] text-brand-black">{p.topic}</p>
                   <p className="mt-1">
