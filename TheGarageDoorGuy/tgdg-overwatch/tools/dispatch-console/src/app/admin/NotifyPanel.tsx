@@ -3,9 +3,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import QRCode from "qrcode";
 
-type Person = { id: string; name: string; topic: string; kinds: string[]; enabled: boolean };
+type Person = { id: string; name: string; topic: string; kinds: string[]; enabled: boolean; devices?: number };
 type Kind = { id: string; label: string };
-type Loaded = { people: Person[]; kinds: Kind[]; server: string; schedulerReady: boolean };
+type Loaded = { people: Person[]; kinds: Kind[]; pushReady: boolean; schedulerReady: boolean };
 
 // Draws a QR code in the browser (nothing is sent anywhere). A phone camera that scans it opens the ntfy app already subscribed.
 function Qr({ value, label }: { value: string; label: string }) {
@@ -54,7 +54,7 @@ export default function NotifyPanel({ techNames, onSignedOut }: { techNames: str
       if (res.status === 401) return signedOut.current();
       if (!res.ok) throw new Error("Could not load the notification list.");
       const body = (await res.json()) as Partial<Loaded>;
-      setData({ people: body.people ?? [], kinds: body.kinds ?? [], server: body.server ?? "https://ntfy.sh", schedulerReady: body.schedulerReady === true });
+      setData({ people: body.people ?? [], kinds: body.kinds ?? [], pushReady: body.pushReady === true, schedulerReady: body.schedulerReady === true });
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not reach the server.");
@@ -118,6 +118,16 @@ export default function NotifyPanel({ techNames, onSignedOut }: { techNames: str
     setNote(r.ok ? { ok: true, text: `Test sent to ${person.name}. It should arrive on the phone within a few seconds.` } : { ok: false, text: typeof r.json.error === "string" ? r.json.error : "The test could not be sent." });
   }
 
+  const joinUrl = (p: Person) => `${window.location.origin}/join/${p.topic}`;
+  async function copyLink(person: Person) {
+    try {
+      await navigator.clipboard.writeText(joinUrl(person));
+      setNote({ ok: true, text: `Link for ${person.name} copied. Text it to their phone.` });
+    } catch {
+      setNote({ ok: false, text: "Could not copy. Select the link in the box and copy it by hand." });
+    }
+  }
+
   const taken = new Set((data?.people ?? []).map((p) => p.name.toLowerCase()));
   const suggestions = techNames.filter((n) => !taken.has(n.toLowerCase()));
 
@@ -142,6 +152,11 @@ export default function NotifyPanel({ techNames, onSignedOut }: { techNames: str
         </p>
       )}
       {error && <p data-state="error" className="text-sm font-semibold text-brand-orange-dark">{error}</p>}
+      {data && !data.pushReady && (
+        <p data-state="no-keys" className="text-sm font-semibold text-brand-orange-dark">
+          Phones can&apos;t be connected yet: the server needs its two alert keys. Set <span className="font-bold">VAPID_PUBLIC_KEY</span> and <span className="font-bold">VAPID_PRIVATE_KEY</span> (the README explains it).
+        </p>
+      )}
       {note && <p data-state={note.ok ? "note-ok" : "note-error"} className={`text-sm font-semibold ${note.ok ? "text-green-800" : "text-brand-orange-dark"}`}>{note.text}</p>}
 
       {data && data.people.length === 0 && <p className="text-sm text-brand-gray">Nobody is on the list yet.</p>}
@@ -183,23 +198,24 @@ export default function NotifyPanel({ techNames, onSignedOut }: { techNames: str
                 </div>
               </div>
               <div className="flex flex-wrap items-center gap-3 pl-[52px] text-xs font-bold uppercase tracking-wide">
+                <span data-field="devices" className={`normal-case tracking-normal ${p.devices ? "text-green-800" : "text-brand-gray"}`}>{p.devices ? `${p.devices} ${p.devices === 1 ? "phone" : "phones"} connected` : "No phone connected yet"}</span>
                 <button type="button" data-action="test" onClick={() => void test(p)} className="text-brand-orange-dark hover:underline">Send test</button>
                 <button type="button" data-action="setup" onClick={() => setOpen(open === p.id ? null : p.id)} className="text-brand-gray hover:underline">{open === p.id ? "Hide phone setup" : "Phone setup"}</button>
                 <button type="button" data-action="remove" onClick={() => void remove(p)} className="text-brand-gray hover:underline">Remove</button>
               </div>
               {open === p.id && (
                 <div data-section="setup" className="ml-[52px] rounded-md border border-brand-black/10 bg-white p-3 text-xs text-brand-gray">
-                  <p className="font-bold text-brand-black">Set up {p.name}&apos;s phone (once):</p>
+                  <p className="font-bold text-brand-black">Connect {p.name}&apos;s phone (once):</p>
                   <ol className="mt-1 list-decimal pl-4">
-                    <li>Point the phone&apos;s <span className="font-bold">camera</span> at this code and tap the link. It opens this person&apos;s private channel page.</li>
-                    <li>On that page tap <span className="font-bold">Subscribe</span> / allow notifications. iPhone: tap Share, then <span className="font-bold">Add to Home Screen</span>, and open it from the new icon first. Or use the free ntfy app and type the channel name below.</li>
+                    <li>On their phone, point the <span className="font-bold">camera</span> at this code and tap the link. Or copy the link below and text it to them.</li>
+                    <li>On that page they tap <span className="font-bold">Turn on alerts</span> and then <span className="font-bold">Allow</span>. On an iPhone the page first shows how to add it to the Home Screen (about 20 seconds).</li>
                   </ol>
-                  <div className="mt-2"><Qr value={`${data.server}/${p.topic}`} label={`QR code to subscribe ${p.name}'s phone`} /></div>
-                  <p className="mt-2">Camera not working? In the app tap <span className="font-bold">+</span> (subscribe to topic), type this channel name, and tap Subscribe:</p>
-                  <p data-field="topic" className="mt-1 select-all break-all rounded bg-brand-cream px-2 py-1 font-mono text-[11px] text-brand-black">{p.topic}</p>
-                  <p className="mt-1">
-                    Or open <a className="font-bold text-brand-orange-dark underline" href={`${data.server}/${p.topic}`} target="_blank" rel="noopener noreferrer">{data.server}/{p.topic}</a>. Then press <span className="font-bold">Send test</span>. Treat the code and channel name like a password: anyone who has them can read this person&apos;s alerts.
+                  <div className="mt-2"><Qr value={joinUrl(p)} label={`QR code with ${p.name}'s phone setup link`} /></div>
+                  <p data-field="link" className="mt-2 select-all break-all rounded bg-brand-cream px-2 py-1 font-mono text-[11px] text-brand-black">{joinUrl(p)}</p>
+                  <p className="mt-2">
+                    <button type="button" data-action="copy" onClick={() => void copyLink(p)} className="font-bold uppercase tracking-wide text-brand-orange-dark hover:underline">Copy link</button>
                   </p>
+                  <p className="mt-2">When their phone is connected, press <span className="font-bold">Send test</span>. Treat the code and link like a password: anyone who has them can connect a phone to this person&apos;s alerts. Removing the person cancels the link.</p>
                 </div>
               )}
             </li>

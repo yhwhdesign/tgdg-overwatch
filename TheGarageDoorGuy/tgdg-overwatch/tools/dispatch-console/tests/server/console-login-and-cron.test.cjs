@@ -70,12 +70,16 @@ const check = (name, ok, detail = "") => { if (ok) passes++; else { failures++; 
     r = proxy(req("https://x.test/api/job-watch", {}, `${CONSOLE_COOKIE}=${junk}`));
     check(`G7 a junk cookie "${junk}" is refused without a crash`, r.status === 401);
   }
-  for (const p of ["/login", "/api/console/login", "/api/webhooks/housecall", "/api/cron/sync", "/admin", "/api/admin/session", "/api/admin/login", "/favicon.ico", "/logo.svg"]) {
+  for (const p of ["/login", "/api/console/login", "/api/webhooks/housecall", "/api/cron/sync", "/admin", "/api/admin/session", "/api/admin/login", "/favicon.ico", "/logo.svg", "/join/tgdg-abc", "/join/tgdg-abc/manifest.webmanifest", "/api/push/key", "/api/push/subscribe", "/api/push/unsubscribe", "/sw.js", "/icon-192.png", "/icon-512.png", "/apple-touch-icon.png"]) {
     r = proxy(req("https://x.test" + p));
     check(`G8 ${p} does not need the console sign-in (it protects itself)`, r.headers.get("x-middleware-next") === "1", String(r.status));
   }
   r = proxy(req("https://x.test/api/job-watch-extra"));
   check("G10 a path that only STARTS like a protected-free one is still guarded", r.status === 401);
+  for (const p of ["/join", "/joined/x", "/api/pushy", "/api/job-watch/join/x", "/sw.js.map", "/swXjs"]) {
+    r = proxy(req("https://x.test" + p));
+    check(`G9b ${p} is NOT mistaken for a phone-setup path (still needs the console sign-in)`, r.headers.get("x-middleware-next") !== "1", String(r.status));
+  }
   r = proxy(req("https://x.test/administrator"));
   check("G11 /administrator is not mistaken for /admin", r.status === 307);
   r = proxy(req("https://x.test/api/administrator"));

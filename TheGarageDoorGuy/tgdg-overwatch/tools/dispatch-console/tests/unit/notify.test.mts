@@ -1,4 +1,4 @@
-import { itemsFromWatch, runNotify, eligible, parseKinds, cleanName, newTopic, validTopic, ntfyRequest, ntfyServer, ntfySender, MAX_LAG_MS, NOTIFY_KINDS, type NotifyStore, type Recipient, type Sender, type NotifyItem, type NotifyMessage } from "../../src/lib/notify.ts";
+import { itemsFromWatch, runNotify, eligible, parseKinds, cleanName, newTopic, validTopic, NoDeviceError, MAX_LAG_MS, NOTIFY_KINDS, type NotifyStore, type Recipient, type Sender, type NotifyItem, type NotifyMessage } from "../../src/lib/notify.ts";
 
 let passes = 0, failures = 0;
 const check = (name: string, ok: boolean, detail = "") => { if (ok) passes++; else { failures++; console.log(`FAIL ${name}${detail ? "  <- " + detail : ""}`); } };
@@ -109,24 +109,23 @@ const topics = new Set(Array.from({ length: 200 }, () => newTopic()));
 check("D5 topics are unique, valid, and long enough to be unguessable", topics.size === 200 && [...topics].every((x) => validTopic(x) && x.length >= 29), [...topics][0]);
 eq("D6 invalid topics are refused", ["", "short", "a/b", "x".repeat(65), "has space 1234567890123456", 5, null].map(validTopic), Array(7).fill(false));
 
-// ===== E. the sender
-const msg: NotifyMessage = { title: "Estimate finished", body: "Body text", url: URL1, priority: 3, tag: "memo" };
-const topic = "tgdg-" + "b".repeat(24);
-let req = ntfyRequest("https://ntfy.sh", topic, msg);
-eq("E1 the request: to the channel, POST, title/priority/tags/click as headers, body as text", [req.url, req.init.method, req.init.headers, req.init.body], [`https://ntfy.sh/${topic}`, "POST", { Title: "Estimate finished", Priority: "3", Tags: "memo", Click: URL1 }, "Body text"]);
-req = ntfyRequest("https://ntfy.sh", topic, { ...msg, url: null }, "tok");
-eq("E2 no link: no Click header; a token is sent as a bearer", [(req.init.headers as Record<string, string>).Click, (req.init.headers as Record<string, string>).Authorization], [undefined, "Bearer tok"]);
-eq("E3 an invalid channel is refused before anything is sent", (() => { try { ntfyRequest("https://ntfy.sh", "bad/topic", msg); return "sent"; } catch { return "refused"; } })(), "refused");
-eq("E4 a non-ASCII title is cleaned for the header", (ntfyRequest("https://ntfy.sh", topic, { ...msg, title: "Café – done" }).init.headers as Record<string, string>).Title, "Caf done");
-eq("E5 the server setting: default, custom https, rejects http/odd", [ntfyServer({}), ntfyServer({ NTFY_SERVER: "https://ntfy.example.com/" }), ntfyServer({ NTFY_SERVER: "http://ntfy.example.com" }), ntfyServer({ NTFY_SERVER: "https://a.com/path" }), ntfyServer({ NTFY_SERVER: "javascript:1" })], ["https://ntfy.sh", "https://ntfy.example.com", "https://ntfy.sh", "https://ntfy.sh", "https://ntfy.sh"]);
-let called: { url: string; init: RequestInit } | null = null;
-await ntfySender({ server: "https://ntfy.sh", fetchImpl: (async (url: string, init: RequestInit) => { called = { url, init }; return new Response("ok", { status: 200 }); }) as never }).send({ topic, name: "J" }, msg);
-eq("E6 the sender posts to the right place", called!.url, `https://ntfy.sh/${topic}`);
-let err = ""; try { await ntfySender({ server: "https://ntfy.sh", fetchImpl: (async () => new Response("no", { status: 429 })) as never }).send({ topic, name: "J" }, msg); } catch (e) { err = (e as Error).message; }
-eq("E7 a refusal from the service is an error (so the send is retried later)", err, "the notification service answered 429");
-err = ""; try { await ntfySender({ server: "https://ntfy.sh", fetchImpl: (async () => { throw new Error("network down"); }) as never }).send({ topic, name: "J" }, msg); } catch (e) { err = (e as Error).message; }
-eq("E8 a network failure is an error too", err, "network down");
-eq("E9 a very long body is cut", (ntfyRequest("https://ntfy.sh", topic, { ...msg, body: "x".repeat(5000) }).init.body as string).length, 1000);
+// ===== E. a person with no phone connected yet
+const holdSender = (noDevice: string[]) => {
+  const sent: string[] = [];
+  const s: Sender & { sent: string[] } = { sent, async send(r) { if (noDevice.includes(r.name)) throw new NoDeviceError(); sent.push(r.name); } };
+  return s;
+};
+{
+  const store = memStore([person(), person({ id: "r2", name: "Dispatch" })]); const sender = holdSender(["Dispatch"]);
+  const logs: string[] = [];
+  let res = await runNotify({ items, store, sender, now: () => NOW, log: (m) => logs.push(m) });
+  eq("E1 someone with no phone is not a failure: counted as held back, never as failed, nothing logged", [res.sent, res.failed, res.noDevice, logs.length], [4, 0, 4, 0]);
+  eq("E2 their events are not recorded as sent, so they are delivered once a phone is connected", [...store.claimed].filter((k) => k.startsWith("r2|")).length, 0);
+  const later = holdSender([]);
+  res = await runNotify({ items, store, sender: later, now: () => NOW });
+  eq("E3 ...and the next run delivers them once a phone is connected", [res.sent, res.alreadySent, later.sent.filter((n) => n === "Dispatch").length], [4, 4, 4]);
+  eq("E4 NoDeviceError is its own kind of error", [new NoDeviceError() instanceof Error, new NoDeviceError().name], [true, "NoDeviceError"]);
+}
 
 console.log(`\n${passes} passed, ${failures} failed`);
 process.exit(failures ? 1 : 0);

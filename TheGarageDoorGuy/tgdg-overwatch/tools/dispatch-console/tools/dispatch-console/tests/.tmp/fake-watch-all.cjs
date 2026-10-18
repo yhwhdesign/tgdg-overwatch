@@ -1,0 +1,1 @@
+module.exports.getAllWatch = async () => { if (globalThis.__WATCH_ERROR) throw new Error("hcp exploded Zelda"); return globalThis.__WATCH; };
