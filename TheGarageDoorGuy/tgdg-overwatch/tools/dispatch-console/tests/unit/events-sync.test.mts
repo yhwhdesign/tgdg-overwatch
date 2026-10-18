@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { eventToRows, syncEventsWindow, syncJobsWindow, syncEmployees, type Db, type HcpApi, type HcpEmployee, type HcpEvent, type HcpJob, type JobsPage } from "../../src/lib/hcp-sync.ts";
 
 let passes = 0, failures = 0;

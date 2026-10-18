@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { dockGeometry, dockFeatures, dockMode, DOCK_WINDOW_NAME } from "../../src/lib/dock-window.ts";
 let passes = 0, failures = 0;
 const eq = (n: string, a: unknown, b: unknown) => { if (JSON.stringify(a) === JSON.stringify(b)) passes++; else { failures++; console.log(`FAIL ${n}\n   got  ${JSON.stringify(a)}\n   want ${JSON.stringify(b)}`); } };

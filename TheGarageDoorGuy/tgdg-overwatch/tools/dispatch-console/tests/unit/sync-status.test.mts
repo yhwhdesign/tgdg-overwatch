@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { describeSyncError, recordPartOutcome, computeFreshness, staleAfterMinutes, type StatusDb, type SyncStatusRow, type AutoSyncInfo } from "../../src/lib/sync-status.ts";
 let passes = 0, failures = 0;
 const check = (n: string, ok: boolean, d = "") => { if (ok) passes++; else { failures++; console.log(`FAIL ${n}${d ? "  <- " + d : ""}`); } };

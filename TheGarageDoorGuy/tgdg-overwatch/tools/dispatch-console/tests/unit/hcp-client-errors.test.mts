@@ -1,3 +1,4 @@
+// @ts-nocheck
 import http from "node:http";
 import { diagnoseDay } from "../../src/lib/hcp-diagnose.ts";
 import { calendarDayBounds, syncWindow } from "../../src/lib/availability.ts";

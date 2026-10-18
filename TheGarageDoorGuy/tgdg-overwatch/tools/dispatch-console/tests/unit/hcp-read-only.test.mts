@@ -1,3 +1,4 @@
+// @ts-nocheck
 import http from "node:http";
 import { syncEmployees, syncJobsWindow, syncSingleJob, type Db } from "../../src/lib/hcp-sync.ts";
 

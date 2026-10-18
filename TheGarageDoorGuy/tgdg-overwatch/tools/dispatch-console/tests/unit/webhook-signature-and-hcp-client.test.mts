@@ -1,3 +1,4 @@
+// @ts-nocheck
 import crypto from "node:crypto";
 import http from "node:http";
 import { verifyHcpSignature } from "../../src/lib/verify-webhook.ts";

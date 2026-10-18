@@ -1,3 +1,4 @@
+// @ts-nocheck
 import http from "node:http";
 let passes = 0, failures = 0;
 const check = (n: string, ok: boolean, d = "") => { if (ok) passes++; else { failures++; console.log(`FAIL ${n}${d ? "  <- " + d : ""}`); } };

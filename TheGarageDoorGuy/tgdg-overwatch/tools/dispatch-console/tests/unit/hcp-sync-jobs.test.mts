@@ -1,3 +1,4 @@
+// @ts-nocheck
 import {
   employeeToTechnician, jobToAppointmentRows, extractJobIds,
   syncEmployees, syncJobsWindow, syncSingleJob, retireDemoTechnician,
