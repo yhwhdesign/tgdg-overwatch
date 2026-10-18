@@ -125,15 +125,15 @@ function renderAlerts() {
   const now = Date.now();
   // overtime alerts first (they are the urgent ones), then jobs that have just been finished
   const items = [
-    ...(jobWatch.alerts || []).map((alert) => ({ type: "over", id: alert.id, message: ShellLogic.alertMessage(alert, now), url: alert.url || null })),
-    ...(jobWatch.completed || []).map((done) => ({ type: "done", id: done.id, message: ShellLogic.completionMessage(done), url: done.url || null })),
+    ...(jobWatch.alerts || []).map((alert) => ({ type: "over", id: alert.id, message: ShellLogic.alertMessage(alert, now), url: alert.url || null, kind: alert.kind })),
+    ...(jobWatch.completed || []).map((done) => ({ type: "done", id: done.id, message: ShellLogic.completionMessage(done), url: done.url || null, kind: done.kind })),
   ];
   const shown = items.slice(0, MAX_ALERTS_SHOWN);
   const signature = JSON.stringify([shown.map((x) => [x.type, x.id, x.message, Boolean(x.url)]), items.length]);
   if (signature === alertsSignature) return; // nothing changed: leave the buttons alone so a click is never lost mid-press
   alertsSignature = signature;
   alertsEl.replaceChildren();
-  for (const { type, id, message, url } of shown) {
+  for (const { type, id, message, url, kind } of shown) {
     const bar = el("button", type === "done" ? "alert done" : "alert");
     bar.type = "button";
     bar.dataset.alert = id;
@@ -145,10 +145,10 @@ function renderAlerts() {
     wrap.appendChild(bar);
     if (url) {
       // a separate button under the bar (a button inside a button is not valid), and it must not dismiss the bar
-      const go = el("button", "alert-go", "Go to job");
+      const go = el("button", "alert-go", kind === "estimate" ? "Go to estimate" : "Go to job");
       go.type = "button";
       go.dataset.goto = id;
-      go.title = "Open this ticket in Housecall Pro";
+      go.title = kind === "estimate" ? "Open this estimate in Housecall Pro" : "Open this ticket in Housecall Pro";
       go.addEventListener("click", () => window.overwatch.openJobWatchJob(id));
       wrap.appendChild(go);
     }

@@ -164,6 +164,14 @@
     const started = Date.parse(alert.startedAt);
     const counted = Number.isFinite(started) ? Math.floor((nowMs - started) / 60000) : 0;
     const minutes = Math.max(Number(alert.minutesOnJob) || 0, counted);
+    if (alert.kind === "estimate") {
+      // an estimate nobody has answered: the wait is counted in days
+      const waitedDays = Math.floor(minutes / 1440);
+      return {
+        title: `${alert.label} has had no answer for ${waitedDays} ${waitedDays === 1 ? "day" : "days"}`,
+        detail: `Created ${alert.startedLabel || "earlier"}${techs.length ? ` (${joinNames(techs)})` : ""}. No option is approved or declined yet. Click to dismiss.`,
+      };
+    }
     return {
       title: `${joinNames(techs)} ${techs.length > 1 ? "have" : "has"} been on "${alert.label}" for ${formatDuration(minutes)}`,
       detail: `Longer than the normal ${formatDuration(alert.limitMinutes)}. Started ${alert.startedLabel || "earlier"}. Click to dismiss.`,
@@ -193,7 +201,7 @@
       if (!a || typeof a !== "object" || typeof a.id !== "string" || a.id.length === 0 || a.id.length > 120) continue;
       out.push({
         id: a.id,
-        kind: a.kind === "install" ? "install" : "service",
+        kind: a.kind === "install" ? "install" : a.kind === "estimate" ? "estimate" : "service",
         label: String(a.label == null ? "Job" : a.label).slice(0, 60),
         techs: (Array.isArray(a.techs) ? a.techs : []).filter((t) => typeof t === "string" && t.trim()).slice(0, 6).map((t) => t.slice(0, 60)),
         startedAt: typeof a.startedAt === "string" ? a.startedAt.slice(0, 40) : "",
@@ -214,7 +222,7 @@
       const minutes = c.minutesOnJob == null ? null : Number(c.minutesOnJob);
       out.push({
         id: c.id,
-        kind: c.kind === "install" ? "install" : "service",
+        kind: c.kind === "install" ? "install" : c.kind === "estimate" ? "estimate" : "service",
         label: String(c.label == null ? "Job" : c.label).slice(0, 60),
         techs: (Array.isArray(c.techs) ? c.techs : []).filter((t) => typeof t === "string" && t.trim()).slice(0, 6).map((t) => t.slice(0, 60)),
         completedAt: typeof c.completedAt === "string" ? c.completedAt.slice(0, 40) : "",
@@ -233,13 +241,18 @@
   function completionMessage(c) {
     const took = c.minutesOnJob == null ? "" : ` after ${formatDuration(c.minutesOnJob)}`;
     const hasNotes = !c.notesHidden && c.notes.length > 0;
+    const isEstimate = c.kind === "estimate";
     const notes = c.notesHidden
       ? "Notes are turned off."
       : hasNotes
         ? c.notes.join("\n")
         : c.notesPending
-          ? "No notes yet. They will appear here if the tech adds them."
-          : "No notes were left.";
+          ? isEstimate
+            ? "No options on it yet. They will appear here once the tech adds them."
+            : "No notes yet. They will appear here if the tech adds them."
+          : isEstimate
+            ? "No options were added."
+            : "No notes were left.";
     return { title: `${joinNames(c.techs)} finished "${c.label}"`, detail: `Finished ${c.completedLabel || "just now"}${took}.`, notes, hasNotes };
   }
 

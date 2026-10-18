@@ -6,6 +6,7 @@
 // "Authorization: Token <key>" or "Bearer <key>", so we try both once and
 // remember whichever works (override the first guess with HCP_AUTH_SCHEME).
 
+import type { EstimateApi, EstimatePage, HcpEstimate } from "./estimates";
 import type { EventsListOptions, HcpApi, HcpAppointment, HcpEmployee, HcpEvent, HcpJob, JobsPage } from "./hcp-sync";
 
 const BASE_URL = process.env.HCP_BASE_URL || "https://api.housecallpro.com";
@@ -314,5 +315,19 @@ async function listEvents(from: Date, to: Date, opts: EventsListOptions = {}): P
     return listEventsFull(from, to, opts);
   }
 }
+
+interface EstimatesResponse {
+  page?: number;
+  total_pages?: number;
+  estimates?: HcpEstimate[];
+}
+
+/** One page of estimates, newest first: GET /estimates (read-only). */
+async function listEstimatesPage(page: number, pageSize: number): Promise<EstimatePage> {
+  const data = await getJson<EstimatesResponse>(`/estimates?page=${page}&page_size=${pageSize}`);
+  return { estimates: Array.isArray(data.estimates) ? data.estimates : [], page, totalPages: data.total_pages ?? 1 };
+}
+
+export const estimateApi: EstimateApi = { listEstimatesPage };
 
 export const hcpApi: HcpApi = { listEmployees, listJobsInWindow, getJob, listAppointments, listEvents };
