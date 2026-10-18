@@ -38,6 +38,7 @@ const suites = [
   ["scripts", "events-survey.test.mjs"],
   ["scripts", "jobwatch-probe.test.mjs"],
   ["scripts", "estimates-probe.test.mjs"],
+  ["scripts", "find-id.test.mjs"],
   ["ui", "console-flow.test.cjs"],
   ["ui", "admin-screen.test.cjs"],
   ["ui", "reports-page.test.cjs"],
