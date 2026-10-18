@@ -1,10 +1,23 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import QRCode from "qrcode";
 
 type Person = { id: string; name: string; topic: string; kinds: string[]; enabled: boolean };
 type Kind = { id: string; label: string };
 type Loaded = { people: Person[]; kinds: Kind[]; server: string; schedulerReady: boolean };
+
+// Draws a QR code in the browser (nothing is sent anywhere). A phone camera that scans it opens the ntfy app already subscribed.
+function Qr({ value, label }: { value: string; label: string }) {
+  const [src, setSrc] = useState("");
+  useEffect(() => {
+    let live = true;
+    QRCode.toDataURL(value, { margin: 1, width: 176, errorCorrectionLevel: "M" }).then((url) => { if (live) setSrc(url); }).catch(() => { if (live) setSrc(""); });
+    return () => { live = false; };
+  }, [value]);
+  // eslint-disable-next-line @next/next/no-img-element
+  return src ? <img data-field="qr" src={src} alt={label} width={176} height={176} className="rounded border border-brand-black/10 bg-white" /> : <div className="h-[176px] w-[176px] rounded bg-brand-cream" />;
+}
 
 const JSON_HEADERS = { "content-type": "application/json" };
 
@@ -178,12 +191,14 @@ export default function NotifyPanel({ techNames, onSignedOut }: { techNames: str
                 <div data-section="setup" className="ml-[52px] rounded-md border border-brand-black/10 bg-white p-3 text-xs text-brand-gray">
                   <p className="font-bold text-brand-black">Set up {p.name}&apos;s phone (once):</p>
                   <ol className="mt-1 list-decimal pl-4">
-                    <li>Install the free <span className="font-bold">ntfy</span> app (iPhone or Android), or open the link below in the phone&apos;s browser and allow notifications.</li>
-                    <li>In the app tap <span className="font-bold">+</span> (subscribe to topic), type this channel name, and tap Subscribe:</li>
+                    <li>Install the free <span className="font-bold">ntfy</span> app (iPhone or Android) and open it once.</li>
+                    <li>Point the phone&apos;s <span className="font-bold">camera</span> at this code and tap the link it shows. The app opens already subscribed.</li>
                   </ol>
+                  <div className="mt-2"><Qr value={`ntfy://${data.server.replace(/^https?:\/\//, "")}/${p.topic}`} label={`QR code to subscribe ${p.name}'s phone`} /></div>
+                  <p className="mt-2">Camera not working? In the app tap <span className="font-bold">+</span> (subscribe to topic), type this channel name, and tap Subscribe:</p>
                   <p data-field="topic" className="mt-1 select-all break-all rounded bg-brand-cream px-2 py-1 font-mono text-[11px] text-brand-black">{p.topic}</p>
                   <p className="mt-1">
-                    Or open <a className="font-bold text-brand-orange-dark underline" href={`${data.server}/${p.topic}`} target="_blank" rel="noopener noreferrer">{data.server}/{p.topic}</a>. Then press <span className="font-bold">Send test</span>. Treat the channel name like a password: anyone who has it can read this person&apos;s alerts.
+                    Or open <a className="font-bold text-brand-orange-dark underline" href={`${data.server}/${p.topic}`} target="_blank" rel="noopener noreferrer">{data.server}/{p.topic}</a>. Then press <span className="font-bold">Send test</span>. Treat the code and channel name like a password: anyone who has them can read this person&apos;s alerts.
                   </p>
                 </div>
               )}
