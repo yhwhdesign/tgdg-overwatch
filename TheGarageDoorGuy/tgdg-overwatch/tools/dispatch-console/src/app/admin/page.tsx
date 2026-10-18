@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import NotifyPanel from "./NotifyPanel";
 import { CLASSIFICATIONS, type Classification } from "@/lib/service-techs";
 
 type Tech = { id: string; name: string; hcpRole: string | null; classification: string | null };
@@ -366,6 +367,7 @@ export default function AdminPage() {
         {view === "list" && (
           <div className="flex flex-col gap-6">
             <RefreshPanel onSignedOut={() => apply({ view: "login", techs: [], error: null })} />
+            <NotifyPanel techNames={techs.map((t) => t.name)} onSignedOut={() => apply({ view: "login", techs: [], error: null })} />
             <section className="flex flex-col gap-3">
               <h2 className="text-xl font-black uppercase text-brand-black">Who takes which calls</h2>
               <p className="text-sm text-brand-gray">

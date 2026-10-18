@@ -84,3 +84,24 @@ model SyncStatus {
   lastTrigger    String?
   lastDurationMs Int?
 }
+
+// People who get phone notifications (set on the Admin screen). `topic` is a long random private channel name the
+// person subscribes to in the ntfy app; `kinds` are the alert types they chose.
+model NotifyRecipient {
+  id        String   @id @default(cuid())
+  name      String
+  topic     String   @unique
+  kinds     String[] @default([])
+  enabled   Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// "This person was already told about this event" (key = recipientId|eventId), so nobody is told twice.
+// Rows older than three days are deleted on every run.
+model NotifySent {
+  key    String   @id
+  sentAt DateTime @default(now())
+
+  @@index([sentAt])
+}

@@ -29,6 +29,7 @@ const suites = [
   ["unit", "repeat-rules.test.mts"],
   ["unit", "job-watch.test.mts", ALL],
   ["unit", "estimates.test.mts", ALL],
+  ["unit", "notify.test.mts", ALL],
   ["unit", "dock-window.test.mts"],
   ["unit", "sync-status.test.mts", TWO],
   ["unit", "auto-sync-controller.test.mts", THREE],
@@ -40,12 +41,14 @@ const suites = [
   ["ui", "admin-screen.test.cjs"],
   ["ui", "reports-page.test.cjs"],
   ["ui", "estimates-page.test.cjs"],
+  ["ui", "notify-panel.test.cjs"],
   ["ui", "dock-button.test.cjs"],
   ["server", "offered-technicians-route.test.cjs"],
   ["server", "hcp-sync-route.test.cjs"],
   ["server", "refresh-and-status.test.cjs"],
   ["server", "admin-session-route.test.cjs"],
   ["server", "job-watch-route.test.cjs"],
+  ["server", "notify-routes.test.cjs"],
   ["server", "console-login-and-cron.test.cjs"],
 ];
 

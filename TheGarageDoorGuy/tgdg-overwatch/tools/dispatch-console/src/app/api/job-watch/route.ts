@@ -1,9 +1,5 @@
 import { NextResponse } from "next/server";
-import { businessTimeZone } from "@/lib/availability";
-import { getEstimateWatch } from "@/lib/estimates";
-import { estimateApi } from "@/lib/hcp-client";
-import { getJobWatch } from "@/lib/job-watch";
-import { hcpApi, liveWatchHelpers } from "@/lib/job-watch-live";
+import { getAllWatch } from "@/lib/watch-all";
 
 export const dynamic = "force-dynamic";
 
@@ -17,14 +13,5 @@ export const dynamic = "force-dynamic";
 // and an office-made estimate nobody has answered for a few days (a "waiting" bar). If the estimates cannot be read,
 // the job bars still work and `estimatesOk` is false.
 export async function GET() {
-  const result = await getJobWatch({ api: hcpApi, helpers: liveWatchHelpers });
-  if (!result.ok) return NextResponse.json(result, { headers: { "Cache-Control": "no-store" } });
-  try {
-    const est = await getEstimateWatch({ api: estimateApi, timeZone: businessTimeZone });
-    const completed = [...est.finished, ...result.completed].sort((a, b) => Date.parse(b.completedAt) - Date.parse(a.completedAt)).slice(0, 20);
-    return NextResponse.json({ ...result, alerts: [...result.alerts, ...est.waiting], completed, estimatesOk: true }, { headers: { "Cache-Control": "no-store" } });
-  } catch (err) {
-    console.error(`[job-watch] estimates could not be read: ${err instanceof Error ? err.message.slice(0, 200) : "unknown"}`);
-    return NextResponse.json({ ...result, estimatesOk: false }, { headers: { "Cache-Control": "no-store" } });
-  }
+  return NextResponse.json(await getAllWatch(), { headers: { "Cache-Control": "no-store" } });
 }
