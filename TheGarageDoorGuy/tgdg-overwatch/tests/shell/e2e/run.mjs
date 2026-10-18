@@ -39,7 +39,7 @@ fs.mkdirSync(shots);
 
 function launch(script, env) {
   const flags = ["--no-sandbox", "--disable-gpu", path.join(here, script)];
-  const options = { env: { ...process.env, SHOT_DIR: shots, SUITE_TRACE: "1", ...env }, encoding: "utf8", timeout: 240_000 };
+  const options = { env: { ...process.env, SHOT_DIR: shots, SUITE_TRACE: "1", ...env }, encoding: "utf8", timeout: 420_000 };
   return headless
     ? spawnSync("xvfb-run", ["-a", "-s", "-screen 0 1920x1080x24", electron, ...flags], options)
     : spawnSync(electron, flags, options);

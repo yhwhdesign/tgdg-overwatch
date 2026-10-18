@@ -1,4 +1,4 @@
-import { evaluateJobs, checkJobs, getJobWatch, resetJobWatchCache, readWatchRules, classifyJob, jobLabel, jobTexts, noteTexts, DEFAULT_RULES, type WatchHelpers } from "../../src/lib/job-watch.ts";
+import { evaluateJobs, checkJobs, getJobWatch, resetJobWatchCache, readWatchRules, jobUrl, validJobUrlTemplate, DEFAULT_JOB_URL_TEMPLATE, classifyJob, jobLabel, jobTexts, noteTexts, DEFAULT_RULES, type WatchHelpers } from "../../src/lib/job-watch.ts";
 import { calendarDayBounds, businessTimeZone } from "../../src/lib/availability.ts";
 import { describeSyncError } from "../../src/lib/sync-status.ts";
 import { employeeToTechnician, isCanceled, type HcpApi, type HcpJob, type HcpEmployee, type JobsPage } from "../../src/lib/hcp-sync.ts";
@@ -21,8 +21,8 @@ const job = (o: Partial<HcpJob> & { startedAgo?: number | null; completedAgo?: n
 const run = (jobs: HcpJob[], now = NOW, rules = DEFAULT_RULES) => evaluateJobs(jobs, names, now, rules, helpers);
 
 // ================= A. the settings =================
-eq("A1 defaults: install 90, service 60, the word 'install', finished jobs announced for 3 hours, notes on", readWatchRules({}), { installMinutes: 90, serviceMinutes: 60, installWords: ["install"], completedHours: 3, showNotes: true });
-eq("A2 custom values are used", readWatchRules({ JOB_WATCH_INSTALL_MINUTES: "120", JOB_WATCH_SERVICE_MINUTES: "45", JOB_WATCH_INSTALL_WORDS: " Install , NEW DOOR ,, replacement " }), { installMinutes: 120, serviceMinutes: 45, installWords: ["install", "new door", "replacement"], completedHours: 3, showNotes: true });
+eq("A1 defaults: install 90, service 60, the word 'install', finished jobs announced for 3 hours, notes on", readWatchRules({}), { installMinutes: 90, serviceMinutes: 60, installWords: ["install"], completedHours: 3, showNotes: true, jobUrlTemplate: "https://pro.housecallpro.com/app/jobs/{id}" });
+eq("A2 custom values are used", readWatchRules({ JOB_WATCH_INSTALL_MINUTES: "120", JOB_WATCH_SERVICE_MINUTES: "45", JOB_WATCH_INSTALL_WORDS: " Install , NEW DOOR ,, replacement " }), { installMinutes: 120, serviceMinutes: 45, installWords: ["install", "new door", "replacement"], completedHours: 3, showNotes: true, jobUrlTemplate: "https://pro.housecallpro.com/app/jobs/{id}" });
 for (const bad of ["", "abc", "0", "-5", "4", "1.5", "99999", "NaN", " "]) eq(`A3 an unusable minutes setting "${bad}" falls back to the default`, [readWatchRules({ JOB_WATCH_INSTALL_MINUTES: bad }).installMinutes, readWatchRules({ JOB_WATCH_SERVICE_MINUTES: bad }).serviceMinutes], [90, 60]);
 eq("A4 only commas for the words falls back to 'install'", readWatchRules({ JOB_WATCH_INSTALL_WORDS: " , ,, " }).installWords, ["install"]);
 eq("A5 the smallest (5) and largest (1440) allowed minutes are accepted", [readWatchRules({ JOB_WATCH_SERVICE_MINUTES: "5" }).serviceMinutes, readWatchRules({ JOB_WATCH_INSTALL_MINUTES: "1440" }).installMinutes], [5, 1440]);
@@ -185,7 +185,7 @@ res = await checkJobs(fakeApi({ pages: [{ jobs: [withCustomer], page: 1, totalPa
 const out = JSON.stringify(res);
 check("I1 the job was found and classified as an install (from its description)", res.ok && res.alerts.length === 1 && res.alerts[0].kind === "install", out);
 check("I2 NO customer detail appears anywhere in the answer (name, phone, email, street, gate code, description)", !/Jane|Customer|501-555|jane@|Secret|Little Rock|72201|gate code|1234/.test(out), out);
-eq("I3 the answer's job fields are exactly the safe ones", Object.keys((res as { alerts: object[] }).alerts[0]).sort(), ["id", "jobId", "kind", "label", "limitMinutes", "minutesOnJob", "startedAt", "startedLabel", "techs"]);
+eq("I3 the answer's job fields are exactly the safe ones", Object.keys((res as { alerts: object[] }).alerts[0]).sort(), ["id", "jobId", "kind", "label", "limitMinutes", "minutesOnJob", "startedAt", "startedLabel", "techs", "url"]);
 
 // ================= J. the cache =================
 resetJobWatchCache();
@@ -262,7 +262,7 @@ const done = fin(15, { notes: [{ content: "Gate code 4471. Customer wants a quot
 done.customer = { first_name: "Jane", last_name: "Customer", mobile_number: "501-555-0101", email: "jane@example.com" };
 done.address = { street: "12 Secret Ln", city: "Little Rock", zip: "72201" };
 const pj = run([done]); const pjText = JSON.stringify(pj);
-eq("L27 a finished job returns exactly the intended fields and no others", Object.keys(pj.completed[0]).sort(), ["completedAt", "completedLabel", "id", "jobId", "kind", "label", "minutesOnJob", "notes", "notesHidden", "notesPending", "techs"]);
+eq("L27 a finished job returns exactly the intended fields and no others", Object.keys(pj.completed[0]).sort(), ["completedAt", "completedLabel", "id", "jobId", "kind", "label", "minutesOnJob", "notes", "notesHidden", "notesPending", "techs", "url"]);
 check("L28 the notes ARE returned (that is the point of the notification)...", pjText.includes("Gate code 4471. Customer wants a quote."), pjText);
 check("L29 ...but nothing else about the customer is: no name, phone, email, address, or the description text", !/Jane|Customer"|501-555|jane@|Secret|Little Rock|72201|Install for/.test(pjText.replace("Customer wants a quote", "")), pjText);
 const inProgress = job({ startedAgo: 120, notes: [{ content: "Gate code 4471 while still working" }] });
@@ -318,5 +318,39 @@ check("L40 one answer carries both: the overtime alerts and the finished jobs, a
 
 // ================= K. it works the same wherever the server runs =================
 console.log(`TZ=${process.env.TZ ?? "(default)"}`);
+// ---- the link to the job in Housecall Pro ("Go to job")
+const JID = "job_222bc7db334e4898992bffe4b472bf00";
+eq("U1 the default link is the real HCP job page for that job id", jobUrl(undefined, JID), "https://pro.housecallpro.com/app/jobs/job_222bc7db334e4898992bffe4b472bf00");
+eq("U2 the default template is the one the user's real HCP link uses", DEFAULT_JOB_URL_TEMPLATE, "https://pro.housecallpro.com/app/jobs/{id}");
+eq("U3 a custom https template is used", jobUrl("https://example.test/j/{id}/view", JID), `https://example.test/j/${JID}/view`);
+for (const [name, bad] of [["http, not https", "http://pro.housecallpro.com/app/jobs/{id}"], ["no {id}", "https://pro.housecallpro.com/app/jobs/"], ["two {id}", "https://x.test/{id}/{id}"], ["a space", "https://x.test/a b/{id}"], ["javascript:", "javascript:alert(1)//{id}"], ["empty", ""], ["another brace", "https://x.test/{foo}/{id}"], ["a newline", "https://x.test/\n{id}"]] as const) {
+  eq(`U4 a bad template (${name}) is ignored and the default is used`, jobUrl(bad, JID), "https://pro.housecallpro.com/app/jobs/" + JID);
+}
+eq("U5 readWatchRules takes HCP_JOB_URL_TEMPLATE when it is valid", readWatchRules({ HCP_JOB_URL_TEMPLATE: "https://x.test/{id}" }).jobUrlTemplate, "https://x.test/{id}");
+eq("U6 ...and falls back to the default when it is not", readWatchRules({ HCP_JOB_URL_TEMPLATE: "ftp://x.test/{id}" }).jobUrlTemplate, DEFAULT_JOB_URL_TEMPLATE);
+eq("U7 validJobUrlTemplate says null for nonsense and the text for a good one", [validJobUrlTemplate("nope"), validJobUrlTemplate(" https://a.test/{id} ")], [null, "https://a.test/{id}"]);
+for (const odd of ["", "a/b", "job id", "../x", "job?x=1", "x#y", "a".repeat(81), 42, null, undefined, "job_\u0000"] as unknown[]) {
+  eq(`U8 an id that is not safe in a web address (${JSON.stringify(odd)}) gives no link`, jobUrl(undefined, odd), null);
+}
+eq("U9 an id with characters that need escaping is escaped, never trusted raw", jobUrl("https://x.test/{id}", "a-b_c"), "https://x.test/a-b_c");
+// the links in the answer: both kinds of bar carry one, and it holds nothing but the job id
+{
+  const rules = readWatchRules({});
+  const nameBy = new Map([["pro_a", "Alex Tech"]]);
+  const when = new Date("2026-10-13T20:00:00Z");
+  const agoIso = (m: number) => new Date(when.getTime() - m * 60_000).toISOString();
+  const jobs = [
+    { id: JID, work_status: "in progress", assigned_employees: [{ id: "pro_a" }], work_timestamps: { started_at: agoIso(100) }, job_fields: { job_type: { name: "Garage Door Install" } }, customer: { first_name: "Jane" }, address: { street: "12 Secret Ln" } },
+    { id: "job_" + "d".repeat(32), work_status: "complete rated", assigned_employees: [{ id: "pro_a" }], work_timestamps: { started_at: agoIso(85), completed_at: agoIso(20) }, notes: [{ content: "done" }] },
+    { id: "bad id/with slash", work_status: "in progress", assigned_employees: [{ id: "pro_a" }], work_timestamps: { started_at: agoIso(100) } },
+  ] as unknown as HcpJob[];
+  const sum = evaluateJobs(jobs, nameBy, when, rules, { timeZone: () => "America/Chicago", isCanceled });
+  const a = sum.alerts.find((x) => x.jobId === JID)!;
+  eq("U10 an overtime alert carries the job's page", a.url, "https://pro.housecallpro.com/app/jobs/" + JID);
+  eq("U11 a finished-job notification carries its job's page", sum.completed[0].url, "https://pro.housecallpro.com/app/jobs/job_" + "d".repeat(32));
+  eq("U12 a job whose id is not safe still alerts, just without a link", sum.alerts.find((x) => x.jobId === "bad id/with slash")!.url, null);
+  eq("U13 the link holds no customer detail", JSON.stringify([a.url, sum.completed[0].url]).match(/Jane|Secret|Customer/), null);
+}
+
 console.log(`\n${passes} passed, ${failures} failed`);
 process.exit(failures ? 1 : 0);

@@ -12,6 +12,7 @@ contextBridge.exposeInMainWorld("overwatch", {
   nextScreen: () => ipcRenderer.invoke("window:nextScreen"),
   setLayout: (layout) => ipcRenderer.send("layout:set", layout),
   dismissJobWatch: (id) => ipcRenderer.invoke("jobwatch:dismiss", id),
+  openJobWatchJob: (id) => ipcRenderer.invoke("jobwatch:open", id),
   onJobWatchChanged: (callback) => {
     const handler = (_event, info) => callback(info);
     ipcRenderer.on("jobwatch:changed", handler);
