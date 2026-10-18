@@ -19,7 +19,7 @@ export default function JoinClient({ code, name }: { code: string; name: string 
     (async () => {
       const env = detectEnv(window as unknown as Parameters<typeof detectEnv>[0]);
       // On an iPhone, alerts only work from the Home Screen icon, so that comes first.
-      if (env.ios && !env.standalone) return live && setPhase("install");
+      if (env.ios && !env.standalone) return live && setPhase(env.safari ? "install" : "open-safari");
       if (!env.supported) return live && setPhase("unsupported");
       if (window.Notification.permission === "denied") return live && setPhase("blocked");
       const on = await alreadyOn(deps(code));
@@ -39,6 +39,15 @@ export default function JoinClient({ code, name }: { code: string; name: string 
     setPhase(result.reason === "denied" ? "blocked" : "error");
   }, [code]);
 
+  const copyLink = useCallback(async () => {
+    try {
+      await navigator.clipboard.writeText(window.location.href);
+      setMessage("Link copied. Open Safari and paste it in the address bar.");
+    } catch {
+      setMessage("Could not copy. Press and hold the link above, tap Copy, then paste it in Safari.");
+    }
+  }, []);
+
   const off = useCallback(async () => {
     setPhase("working");
     await turnOff(deps(code)).catch(() => {});
@@ -54,6 +63,22 @@ export default function JoinClient({ code, name }: { code: string; name: string 
       </header>
 
       {phase === "checking" && <div className={card}><p className="text-base text-brand-gray">One moment…</p></div>}
+
+      {phase === "open-safari" && (
+        <div className={card} data-phase="open-safari">
+          <h2 className="text-xl font-black text-brand-black">Open this page in Safari</h2>
+          <p className="mt-2 text-base text-brand-gray">An iPhone only lets Safari add this to the Home Screen, and alerts only work from there. This page is open in a different app or browser.</p>
+          <ol className="mt-4 list-decimal space-y-3 pl-5 text-base text-brand-black">
+            <li>Tap <span className="font-bold">Copy link</span> below.</li>
+            <li>Open <span className="font-bold">Safari</span> (the blue compass icon), tap the address bar, paste the link and go.</li>
+            <li>Safari then shows how to add it to your Home Screen.</li>
+          </ol>
+          <p data-field="link" className="mt-4 select-all break-all rounded bg-brand-cream px-3 py-2 font-mono text-xs text-brand-black">{typeof window !== "undefined" ? window.location.href : ""}</p>
+          <button type="button" data-action="copy" onClick={() => void copyLink()} className={`${bigButton} mt-4`}>Copy link</button>
+          {message && <p role="status" className="mt-3 text-base font-bold text-brand-black">{message}</p>}
+          <p className="mt-4 text-sm text-brand-gray">Tip: in many apps the Share or ⋯ menu also has <span className="font-bold">Open in Safari</span>.</p>
+        </div>
+      )}
 
       {phase === "install" && (
         <div className={card} data-phase="install">
