@@ -32,6 +32,7 @@ const moreNote = () => ui(`(document.querySelector('#alerts .alert-more') || {})
 const watchText = () => ui(`document.getElementById('watch-status').hidden ? null : document.getElementById('watch-status').textContent`);
 const watchClass = () => ui(`document.getElementById('watch-status').className`);
 const setWatch = (obj) => inView(views()[0], `fetch('/__setjobwatch?json=' + encodeURIComponent(${JSON.stringify(JSON.stringify(obj))}))`);
+const doneBarsSimple = () => ui(`[...document.querySelectorAll('#alerts .alert.done')].map(b => b.dataset.alert)`);
 const mkAlert = (id, o = {}) => ({ id, jobId: id.split("@")[0], kind: "install", label: "Garage Door Install #4521", techs: ["Alex Tech", "Blake Tech"], startedAt: new Date(Date.now() - 100 * 60000).toISOString(), startedLabel: "9:12 AM", minutesOnJob: 100, limitMinutes: 90, ...o });
 const mkDone = (id, o = {}) => ({ id, jobId: id.split("#")[0], kind: "service", label: "Service call #4600", techs: ["Alex Tech"], completedAt: new Date(Date.now() - 20 * 60000).toISOString(), completedLabel: "2:14 PM", minutesOnJob: 65, notes: ["Replaced spring. Needs a quote for a new opener."], notesPending: false, notesHidden: false, ...o });
 const barColor = (sel) => ui(`getComputedStyle(document.querySelector(${JSON.stringify(sel)})).backgroundColor`);
@@ -120,6 +121,25 @@ const finish = async (code = 0) => { try { await session.defaultSession.cookies.
     check("JW23 (the panel page can ask; tool pages cannot: they have no bridge at all)", (await ui("typeof window.overwatch.dismissJobWatch")) === "function" && (await inView(views()[0], "typeof window.overwatch")) === "undefined");
     await setWatch({ watching: 0, alerts: [] }); await wait(1500);
     check("JW24 the layout is back to normal at the end", views()[0].getBounds().y === baseY);
+
+    // ---------- 1b2. JOB WATCH: "Go to job" opens the ticket in the real browser ----------
+    const JOBURL = "https://pro.housecallpro.com/app/jobs/job_222bc7db334e4898992bffe4b472bf00";
+    const gos = () => ui(`[...document.querySelectorAll('#alerts [data-goto]')].map(b => ({ id: b.dataset.goto, text: b.textContent, inBar: !!b.closest('button.alert') }))`);
+    await setWatch({ watching: 3, alerts: [mkAlert("job_g1@90", { url: JOBURL }), mkAlert("job_g2@90", { url: "https://evil.example.com/steal" }), mkAlert("job_g3@90", { url: "javascript:alert(1)" })] }); await wait(2600);
+    let g = await gos();
+    check("GJ1 only the bar with a safe Housecall Pro link gets a 'Go to job' button (off-site and javascript: links get none), and it is not inside the dismiss button", g.length === 1 && g[0].id === "job_g1@90" && g[0].text === "Go to job" && !g[0].inBar && (await bars()).length === 3, JSON.stringify(g));
+    opened.length = 0;
+    await ui("document.querySelector('[data-goto=\"job_g1@90\"]').click()"); await wait(600);
+    check("GJ2 clicking it opens that ticket in the real browser", opened.length === 1 && opened[0] === JOBURL, JSON.stringify(opened));
+    check("GJ3 ...and does NOT dismiss the bar", (await bars()).some((b) => b.id === "job_g1@90") && !store().jobWatchDismissed["job_g1@90"], JSON.stringify(store().jobWatchDismissed));
+    opened.length = 0;
+    const spoof = await ui(`Promise.all([window.overwatch.openJobWatchJob('job_g2@90'), window.overwatch.openJobWatchJob('job_nope'), window.overwatch.openJobWatchJob('https://evil.example.com/'), window.overwatch.openJobWatchJob(5)])`);
+    check("GJ5 asking for an off-site, unknown or made-up id opens nothing", opened.length === 0 && spoof.every((r) => r.ok === false), JSON.stringify([opened, spoof]));
+    await setWatch({ watching: 1, alerts: [mkAlert("job_g4@90", { url: "http://pro.housecallpro.com/x" })], completed: [mkDone("job_g5#1", { url: JOBURL })] }); await wait(2600);
+    g = await gos(); opened.length = 0;
+    await ui(`document.querySelector('[data-goto="job_g5#1"]').click()`); await wait(600);
+    check("GJ4 the green finished-job bar works the same way (and a plain http link gets no button)", g.length === 1 && g[0].id === "job_g5#1" && opened.length === 1 && opened[0] === JOBURL && (await doneBarsSimple()).includes("job_g5#1"), JSON.stringify([g, opened]));
+    await setWatch({ watching: 0, alerts: [], completed: [] }); await wait(2600);
 
     // ---------- 1c. JOB WATCH: a tech has FINISHED a job (green bar with the notes) ----------
     const doneBars = () => ui(`[...document.querySelectorAll('#alerts .alert.done')].map(b => ({ id: b.dataset.alert, title: b.querySelector('.alert-title').textContent, detail: b.querySelector('.alert-detail').textContent, notes: b.querySelector('.alert-notes').textContent, notesNone: b.querySelector('.alert-notes').classList.contains('none'), hint: b.querySelector('.alert-hint').textContent, tooltip: b.title }))`);

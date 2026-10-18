@@ -375,6 +375,21 @@ ipcMain.handle("jobwatch:dismiss", (event, id) => {
   return { ok: true };
 });
 
+// "Go to job": opens the ticket in the person's own browser. The panel only sends an id; the link comes from what the
+// console told us (never from the panel), and is checked again here before anything is opened.
+ipcMain.handle("jobwatch:open", async (event, id) => {
+  if (!fromPanel(event) || typeof id !== "string" || id.length === 0 || id.length > 120) return { ok: false };
+  const item = [...jobWatch.alerts, ...jobWatch.completed].find((a) => a.id === id);
+  const url = item ? L.safeJobUrl(item.url) : null;
+  if (!url) return { ok: false };
+  try {
+    await shell.openExternal(url);
+    return { ok: true };
+  } catch {
+    return { ok: false };
+  }
+});
+
 ipcMain.handle("tool:show", (event, toolId) => (fromPanel(event) ? { ok: showTool(toolId) } : { ok: false }));
 
 ipcMain.handle("tool:reload", (event) => {

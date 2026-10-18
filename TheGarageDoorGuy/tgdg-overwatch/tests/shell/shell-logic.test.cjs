@@ -160,7 +160,7 @@ eq("H24 the old settings format and an empty file have none", [L.normalizeSettin
 
 // ---- cleanAlerts: whatever the server sends becomes well-formed alerts or nothing
 const good = { id: "job_1@90", kind: "install", label: "Install #77", techs: ["Alex Tech"], startedAt: "2026-10-12T17:20:00.000Z", startedLabel: "12:20 PM", minutesOnJob: 100, limitMinutes: 90 };
-eq("H25 a good alert passes through unchanged", L.cleanAlerts([good]), [good]);
+eq("H25 a good alert passes through unchanged (no link means url is null)", L.cleanAlerts([good]), [{ ...good, url: null }]);
 eq("H26 junk lists give nothing", [L.cleanAlerts(null), L.cleanAlerts("x"), L.cleanAlerts({}), L.cleanAlerts(undefined), L.cleanAlerts(5)], [[], [], [], [], []]);
 eq("H27 entries without a usable id are dropped (missing, empty, number, too long, null, a string)", L.cleanAlerts([{ ...good, id: undefined }, { ...good, id: "" }, { ...good, id: 7 }, { ...good, id: "x".repeat(121) }, null, "alert"]), []);
 eq("H28 an unknown kind becomes 'service'; a missing label becomes 'Job'", [L.cleanAlerts([{ ...good, kind: "weird" }])[0].kind, L.cleanAlerts([{ ...good, label: undefined }])[0].label], ["service", "Job"]);
@@ -169,17 +169,17 @@ eq("H30 techs: only non-blank text, at most six; a non-list becomes none", [L.cl
 eq("H31 numbers that are not numbers become 0", L.cleanAlerts([{ ...good, minutesOnJob: "lots", limitMinutes: null }]).map((a) => [a.minutesOnJob, a.limitMinutes])[0], [0, 0]);
 eq("H32 at most 30 alerts are taken", L.cleanAlerts(Array.from({ length: 100 }, (_, i) => ({ ...good, id: "j" + i }))).length, 30);
 eq("H33 HTML in the text is left as plain text (the panel only ever shows it as text)", L.cleanAlerts([{ ...good, label: "<img src=x onerror=alert(1)>" }])[0].label, "<img src=x onerror=alert(1)>");
-eq("H34 extra fields (a customer name, say) are not carried along", Object.keys(L.cleanAlerts([{ ...good, customer: "Jane Customer", address: "12 Secret Ln" }])[0]).sort(), ["id", "kind", "label", "limitMinutes", "minutesOnJob", "startedAt", "startedLabel", "techs"]);
+eq("H34 extra fields (a customer name, say) are not carried along", Object.keys(L.cleanAlerts([{ ...good, customer: "Jane Customer", address: "12 Secret Ln" }])[0]).sort(), ["id", "kind", "label", "limitMinutes", "minutesOnJob", "startedAt", "startedLabel", "techs", "url"]);
 
 // ---- finished-job notifications
 const doneGood = { id: "job_1#1760000000000", kind: "service", label: "Service call #4600", techs: ["Alex Tech"], completedAt: "2026-10-12T19:14:00.000Z", completedLabel: "2:14 PM", minutesOnJob: 65, notes: ["Replaced spring.", "Needs a quote for a new opener."], notesPending: false, notesHidden: false };
-eq("H35 a good completion passes through unchanged", L.cleanCompletions([doneGood]), [doneGood]);
+eq("H35 a good completion passes through unchanged (no link means url is null)", L.cleanCompletions([doneGood]), [{ ...doneGood, url: null }]);
 eq("H36 junk lists give nothing", [L.cleanCompletions(null), L.cleanCompletions("x"), L.cleanCompletions({}), L.cleanCompletions(undefined), L.cleanCompletions(5)], [[], [], [], [], []]);
 eq("H37 entries without a usable id are dropped", L.cleanCompletions([{ ...doneGood, id: undefined }, { ...doneGood, id: "" }, { ...doneGood, id: 7 }, { ...doneGood, id: "x".repeat(121) }, null, "done"]), []);
 eq("H38 an unknown time on the job stays 'unknown' (null), a bad one too, and a negative one becomes 0", [L.cleanCompletions([{ ...doneGood, minutesOnJob: null }])[0].minutesOnJob, L.cleanCompletions([{ ...doneGood, minutesOnJob: "lots" }])[0].minutesOnJob, L.cleanCompletions([{ ...doneGood, minutesOnJob: -4 }])[0].minutesOnJob, L.cleanCompletions([{ ...doneGood, minutesOnJob: undefined }])[0].minutesOnJob], [null, null, 0, null]);
 eq("H39 notes: only non-blank text, the last three, each cut to 320 characters; a non-list becomes none", [L.cleanCompletions([{ ...doneGood, notes: ["a", "", "  ", 5, null, "b", "c", "d", "e"] }])[0].notes, L.cleanCompletions([{ ...doneGood, notes: "just text" }])[0].notes, L.cleanCompletions([{ ...doneGood, notes: ["n".repeat(900)] }])[0].notes[0].length], [["c", "d", "e"], [], 320]);
 eq("H40 flags are only true when exactly true; an unknown kind is service; a missing label is 'Job'", [L.cleanCompletions([{ ...doneGood, notesPending: "yes", notesHidden: 1 }])[0].notesPending, L.cleanCompletions([{ ...doneGood, notesPending: "yes", notesHidden: 1 }])[0].notesHidden, L.cleanCompletions([{ ...doneGood, kind: "odd" }])[0].kind, L.cleanCompletions([{ ...doneGood, label: undefined }])[0].label], [false, false, "service", "Job"]);
-eq("H41 at most 20 are taken, and extra fields (a customer name, say) are not carried along", [L.cleanCompletions(Array.from({ length: 80 }, (_, i) => ({ ...doneGood, id: "j" + i }))).length, Object.keys(L.cleanCompletions([{ ...doneGood, customer: "Jane", address: "12 Secret Ln" }])[0]).sort()], [20, ["completedAt", "completedLabel", "id", "kind", "label", "minutesOnJob", "notes", "notesHidden", "notesPending", "techs"]]);
+eq("H41 at most 20 are taken, and extra fields (a customer name, say) are not carried along", [L.cleanCompletions(Array.from({ length: 80 }, (_, i) => ({ ...doneGood, id: "j" + i }))).length, Object.keys(L.cleanCompletions([{ ...doneGood, customer: "Jane", address: "12 Secret Ln" }])[0]).sort()], [20, ["completedAt", "completedLabel", "id", "kind", "label", "minutesOnJob", "notes", "notesHidden", "notesPending", "techs", "url"]]);
 eq("H42 HTML in a note stays plain text", L.cleanCompletions([{ ...doneGood, notes: ["<img src=x onerror=alert(1)>"] }])[0].notes[0], "<img src=x onerror=alert(1)>");
 let cm = L.completionMessage(doneGood);
 eq("H43 the finished bar: title, the time and how long it took, and the notes on separate lines", [cm.title, cm.detail, cm.notes, cm.hasNotes], ['Alex Tech finished "Service call #4600"', "Finished 2:14 PM after 1h 5m.", "Replaced spring.\nNeeds a quote for a new opener.", true]);
@@ -190,6 +190,20 @@ eq("H47 no notes and not pending: 'No notes were left.'", [L.completionMessage({
 eq("H48 no notes yet but fresh: says they may still appear", L.completionMessage({ ...doneGood, notes: [], notesPending: true }).notes, "No notes yet. They will appear here if the tech adds them.");
 eq("H49 notes switched off: says so (even if notes were somehow sent)", [L.completionMessage({ ...doneGood, notesHidden: true }).notes, L.completionMessage({ ...doneGood, notesHidden: true }).hasNotes], ["Notes are turned off.", false]);
 eq("H50 dismissals work for finished jobs too (same list, ids with a #)", L.undismissedAlerts([doneGood, { ...doneGood, id: "job_2#9" }], { "job_1#1760000000000": 1 }).map((x) => x.id), ["job_2#9"]);
+
+
+// ---- safeJobUrl: only a real https Housecall Pro link is ever opened
+const JOB = "https://pro.housecallpro.com/app/jobs/job_222bc7db334e4898992bffe4b472bf00";
+eq("U1 a real job link is kept", L.safeJobUrl(JOB), JOB);
+eq("U2 the bare domain is allowed", L.safeJobUrl("https://housecallpro.com/x"), "https://housecallpro.com/x");
+eq("U3 bad links all give null", [
+  "http://pro.housecallpro.com/x", "https://evil.com/", "javascript:alert(1)", "https://housecallpro.com.evil.com/", "https://evilhousecallpro.com/",
+  "https://u:p@pro.housecallpro.com/x", "https://pro.housecallpro.com:8443/x", "file:///etc/passwd", "https://pro.housecallpro.com/a b", "", null, 5, {}, "https://pro.housecallpro.com/" + "x".repeat(300),
+].map((u) => L.safeJobUrl(u)), Array(14).fill(null));
+eq("U4 alerts and completions keep a safe link and drop an unsafe one", [
+  L.cleanAlerts([{ ...good, url: JOB }])[0].url, L.cleanAlerts([{ ...good, url: "https://evil.com/" }])[0].url,
+  L.cleanCompletions([{ ...doneGood, url: JOB }])[0].url, L.cleanCompletions([{ ...doneGood, url: "javascript:1" }])[0].url,
+], [JOB, null, JOB, null]);
 
 console.log(`\n${passes} passed, ${failures} failed`);
 process.exit(failures ? 1 : 0);

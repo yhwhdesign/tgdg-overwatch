@@ -171,6 +171,21 @@
   }
 
   /** Whatever the server sent, reduced to well-formed alerts (so a surprise in its answer can never break the panel). */
+  /** A job link the panel is willing to open: https, on Housecall Pro's own site, with no sign-in details, port or odd characters. Otherwise null. */
+  function safeJobUrl(value) {
+    if (typeof value !== "string" || value.length === 0 || value.length > 300 || /[\u0000-\u0020\u007f]/.test(value)) return null;
+    let u;
+    try {
+      u = new URL(value);
+    } catch {
+      return null;
+    }
+    if (u.protocol !== "https:" || u.username || u.password || u.port) return null;
+    const host = u.hostname.toLowerCase();
+    if (host !== "housecallpro.com" && !host.endsWith(".housecallpro.com")) return null;
+    return u.href;
+  }
+
   function cleanAlerts(list) {
     const number = (v) => (Number.isFinite(Number(v)) ? Number(v) : 0);
     const out = [];
@@ -185,6 +200,7 @@
         startedLabel: typeof a.startedLabel === "string" ? a.startedLabel.slice(0, 12) : "",
         minutesOnJob: number(a.minutesOnJob),
         limitMinutes: number(a.limitMinutes),
+        url: safeJobUrl(a.url),
       });
     }
     return out;
@@ -207,6 +223,7 @@
         notes: (Array.isArray(c.notes) ? c.notes : []).filter((t) => typeof t === "string" && t.trim()).slice(-3).map((t) => t.trim().slice(0, 320)),
         notesPending: c.notesPending === true,
         notesHidden: c.notesHidden === true,
+        url: safeJobUrl(c.url),
       });
     }
     return out;
@@ -299,6 +316,7 @@
     formatDuration,
     joinNames,
     alertMessage,
+    safeJobUrl,
     cleanAlerts,
     cleanCompletions,
     completionMessage,

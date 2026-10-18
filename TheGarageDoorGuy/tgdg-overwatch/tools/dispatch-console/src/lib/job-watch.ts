@@ -43,9 +43,14 @@ export interface WatchRules {
   completedHours: number;
   /** Include the job's notes in "finished" notifications. */
   showNotes: boolean;
+  /** Where "Go to job" leads: an https address with {id} where the job's id goes. */
+  jobUrlTemplate: string;
 }
 
-export const DEFAULT_RULES: WatchRules = { installMinutes: 90, serviceMinutes: 60, installWords: ["install"], completedHours: 3, showNotes: true };
+/** The address of a job's page in the Housecall Pro web app (it uses the same job_... id the API gives). */
+export const DEFAULT_JOB_URL_TEMPLATE = "https://pro.housecallpro.com/app/jobs/{id}";
+
+export const DEFAULT_RULES: WatchRules = { installMinutes: 90, serviceMinutes: 60, installWords: ["install"], completedHours: 3, showNotes: true, jobUrlTemplate: DEFAULT_JOB_URL_TEMPLATE };
 
 function minutesSetting(raw: string | undefined, fallback: number): number {
   const n = Number(raw);
@@ -68,7 +73,22 @@ export function readWatchRules(env: Record<string, string | undefined> = process
     installWords: words.length > 0 ? words : DEFAULT_RULES.installWords,
     completedHours: hoursSetting(env.JOB_WATCH_COMPLETED_HOURS, DEFAULT_RULES.completedHours),
     showNotes: !/^(off|false|no|0)$/i.test((env.JOB_WATCH_SHOW_NOTES ?? "").trim()),
+    jobUrlTemplate: validJobUrlTemplate(env.HCP_JOB_URL_TEMPLATE) ?? DEFAULT_JOB_URL_TEMPLATE,
   };
+}
+
+/** A usable template is https, has no spaces or other braces, and holds {id} exactly once. Otherwise null. */
+export function validJobUrlTemplate(raw: string | undefined | null): string | null {
+  const t = (raw ?? "").trim();
+  if (!/^https:\/\/[^\s{}]+$/i.test(t.replace("{id}", "")) || t.split("{id}").length !== 2) return null;
+  return t;
+}
+
+/** The address of one job in Housecall Pro, or null when the id is not something we would put in a web address. */
+export function jobUrl(template: string | undefined, jobId: unknown): string | null {
+  if (typeof jobId !== "string" || !/^[A-Za-z0-9_-]{1,80}$/.test(jobId)) return null;
+  const t = validJobUrlTemplate(template) ?? DEFAULT_JOB_URL_TEMPLATE;
+  return t.replace("{id}", encodeURIComponent(jobId));
 }
 
 // ---- reading what kind of job it is ---------------------------------------------------------------
@@ -180,6 +200,8 @@ export interface WatchAlert {
   startedLabel: string;
   minutesOnJob: number;
   limitMinutes: number;
+  /** The job's page in Housecall Pro (for "Go to job"), or null. */
+  url: string | null;
 }
 
 /** A job a tech has just finished, with the job's notes. */
@@ -199,6 +221,8 @@ export interface WatchCompletion {
   /** No notes yet, but the job was finished only minutes ago, so a tech may still be typing them. */
   notesPending: boolean;
   notesHidden: boolean;
+  /** The job's page in Housecall Pro (for "Go to job"), or null. */
+  url: string | null;
 }
 
 /** After this many minutes with no notes, "no notes yet" becomes "no notes were left". */
@@ -251,6 +275,7 @@ export function evaluateJobs(jobs: HcpJob[], nameByHcp: Map<string, string>, now
           notes,
           notesPending: rules.showNotes && notes.length === 0 && minutesAgo < NOTES_PENDING_MINUTES,
           notesHidden: !rules.showNotes,
+          url: jobUrl(rules.jobUrlTemplate, job.id),
         });
       }
       continue;
@@ -285,6 +310,7 @@ export function evaluateJobs(jobs: HcpJob[], nameByHcp: Map<string, string>, now
       startedLabel: clockLabel(startedAt, timeZone),
       minutesOnJob,
       limitMinutes,
+      url: jobUrl(rules.jobUrlTemplate, job.id),
     });
   }
   summary.alerts.sort((a, b) => b.minutesOnJob - a.minutesOnJob);

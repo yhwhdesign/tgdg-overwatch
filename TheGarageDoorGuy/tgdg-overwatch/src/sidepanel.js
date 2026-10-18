@@ -125,15 +125,15 @@ function renderAlerts() {
   const now = Date.now();
   // overtime alerts first (they are the urgent ones), then jobs that have just been finished
   const items = [
-    ...(jobWatch.alerts || []).map((alert) => ({ type: "over", id: alert.id, message: ShellLogic.alertMessage(alert, now) })),
-    ...(jobWatch.completed || []).map((done) => ({ type: "done", id: done.id, message: ShellLogic.completionMessage(done) })),
+    ...(jobWatch.alerts || []).map((alert) => ({ type: "over", id: alert.id, message: ShellLogic.alertMessage(alert, now), url: alert.url || null })),
+    ...(jobWatch.completed || []).map((done) => ({ type: "done", id: done.id, message: ShellLogic.completionMessage(done), url: done.url || null })),
   ];
   const shown = items.slice(0, MAX_ALERTS_SHOWN);
-  const signature = JSON.stringify([shown.map((x) => [x.type, x.id, x.message]), items.length]);
+  const signature = JSON.stringify([shown.map((x) => [x.type, x.id, x.message, Boolean(x.url)]), items.length]);
   if (signature === alertsSignature) return; // nothing changed: leave the buttons alone so a click is never lost mid-press
   alertsSignature = signature;
   alertsEl.replaceChildren();
-  for (const { type, id, message } of shown) {
+  for (const { type, id, message, url } of shown) {
     const bar = el("button", type === "done" ? "alert done" : "alert");
     bar.type = "button";
     bar.dataset.alert = id;
@@ -141,7 +141,18 @@ function renderAlerts() {
     bar.append(el("span", "alert-title", message.title), el("span", "alert-detail", message.detail));
     if (type === "done") bar.append(el("span", message.hasNotes ? "alert-notes" : "alert-notes none", message.notes), el("span", "alert-hint", "Click to dismiss."));
     bar.addEventListener("click", () => window.overwatch.dismissJobWatch(id));
-    alertsEl.appendChild(bar);
+    const wrap = el("div", type === "done" ? "alert-wrap done" : "alert-wrap");
+    wrap.appendChild(bar);
+    if (url) {
+      // a separate button under the bar (a button inside a button is not valid), and it must not dismiss the bar
+      const go = el("button", "alert-go", "Go to job");
+      go.type = "button";
+      go.dataset.goto = id;
+      go.title = "Open this ticket in Housecall Pro";
+      go.addEventListener("click", () => window.overwatch.openJobWatchJob(id));
+      wrap.appendChild(go);
+    }
+    alertsEl.appendChild(wrap);
   }
   if (items.length > MAX_ALERTS_SHOWN) alertsEl.appendChild(el("div", "alert-more", `+${items.length - MAX_ALERTS_SHOWN} more (dismiss one to see the next)`));
 }
