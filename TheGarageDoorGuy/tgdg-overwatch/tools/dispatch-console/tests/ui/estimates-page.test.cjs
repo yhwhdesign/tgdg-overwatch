@@ -13,7 +13,7 @@ const check = (name, ok, detail = "") => { if (ok) passes++; else { failures++; 
   const mod = { exports: {} }; new Function("module", "exports", "require", out.outputFiles[0].text)(mod, mod.exports, require);
   const Page = mod.exports.default;
   let handler; const calls = [];
-  globalThis.fetch = async (url) => { calls.push(String(url)); return handler(); };
+  globalThis.fetch = async (url) => { if (String(url) === "/api/job-watch") return { ok: false, status: 503, redirected: false, json: async () => ({}) }; /* the Job Watch bars on this page ask on their own; this suite is about estimates */ calls.push(String(url)); return handler(); };
   const root = createRoot(document.getElementById("root"));
   const text = () => document.body.textContent.replace(/\s+/g, " ").trim();
   const mount = async () => { calls.length = 0; await act(async () => { root.render(React.createElement(React.Fragment, { key: Math.random() }, React.createElement(Page))); }); await act(async () => { await new Promise((r) => setTimeout(r, 5)); }); };
