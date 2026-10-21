@@ -240,7 +240,7 @@ export interface WatchSummary {
   completed: WatchCompletion[];
 }
 
-function techNames(job: HcpJob, nameByHcp: Map<string, string>): string[] {
+export function techNames(job: HcpJob, nameByHcp: Map<string, string>): string[] {
   const ids = [...new Set((job.assigned_employees ?? []).map((e) => e.id).filter(Boolean))];
   const names = ids.map((id) => nameByHcp.get(id) ?? `Technician …${id.slice(-4)}`);
   return names.length > 0 ? names : ["A technician"];
@@ -394,7 +394,7 @@ async function addMissingNotes(api: HcpApi, jobs: HcpJob[], now: Date, rules: Wa
 let namesCache: { at: number; names: Map<string, string> } | null = null;
 const NAMES_TTL_MS = 60 * 60_000;
 
-async function employeeNames(api: HcpApi, now: Date, helpers: WatchHelpers): Promise<Map<string, string>> {
+export async function employeeNames(api: HcpApi, now: Date, helpers: WatchHelpers): Promise<Map<string, string>> {
   if (namesCache && now.getTime() - namesCache.at < NAMES_TTL_MS) return namesCache.names;
   const names = new Map<string, string>();
   for (const e of await api.listEmployees()) names.set(e.id, helpers.employeeName(e));

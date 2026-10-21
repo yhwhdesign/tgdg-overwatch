@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { JobWatchBars } from "../JobWatchBars";
+import SiteNav from "../SiteNav";
 
 type Outcome = "won" | "declined" | "expired" | "open" | "canceled";
 interface Row {
@@ -130,6 +131,7 @@ export default function EstimatesPage() {
   return (
     <main className="flex min-h-screen flex-col bg-brand-cream">
       <JobWatchBars />
+      <SiteNav />
       <div className="bg-brand-black px-4 py-6">
         <div className="mx-auto max-w-2xl">
           <p className="text-xs font-bold uppercase tracking-widest text-brand-orange">The Garage Door Guy Corp</p>

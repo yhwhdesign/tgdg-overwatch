@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import DockButton from "./DockButton";
 import { JobWatchBars, JobWatchStatus } from "./JobWatchBars";
+import SiteNav from "./SiteNav";
 
 type CallType = "residential" | "commercial";
 const CALL_TYPES: CallType[] = ["residential", "commercial"];
@@ -543,6 +544,7 @@ export default function DispatchConsole() {
   return (
     <main className="flex min-h-screen flex-col bg-brand-cream">
       <JobWatchBars />
+      <SiteNav />
       <div className="bg-brand-black px-6 py-8">
         <div className="mx-auto max-w-lg">
           <div className="flex items-start justify-between gap-3">

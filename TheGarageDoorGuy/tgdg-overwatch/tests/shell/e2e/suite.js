@@ -51,7 +51,7 @@ const finish = async (code = 0) => { try { await session.defaultSession.cookies.
     check("1c exactly one tool page exists, the dispatch console, showing", views().length === 1 && urlOf(views()[0]) === "http://localhost:3000/" && views()[0].getVisible(), views().map(urlOf).join());
     check("1d the page text arrived", (await inView(views()[0], "document.getElementById('marker').textContent")) === "DISPATCH PAGE");
     const t = await tabs();
-    check("1e signed out: Dispatch, Admin and Estimates tabs, with names; there is NO Reports tab", t.length === 3 && t[0].text === "Dispatch" && t[0].active && t[1].text === "Admin" && t[2].text === "Estimates", JSON.stringify(t));
+    check("1e signed out: Dispatch, Admin, Estimates and Weekend tabs, with names; there is NO Reports tab", t.length === 4 && t[0].text === "Dispatch" && t[0].active && t[1].text === "Admin" && t[2].text === "Estimates" && t[3].text === "Weekend" && !t.some((x) => x.id === "reports"), JSON.stringify(t));
     const chromeH = await ui("Math.ceil(document.getElementById('chrome').getBoundingClientRect().height)");
     const vb = views()[0].getBounds(); const [cw, ch] = win().getContentSize();
     check("1f the tool page starts right under the header and fills the rest", vb.x === 0 && vb.y === chromeH && vb.width === cw && vb.height === ch - chromeH && chromeH > 50 && chromeH < 140, `${JSON.stringify(vb)} chrome ${chromeH}`);
@@ -202,7 +202,7 @@ const finish = async (code = 0) => { try { await session.defaultSession.cookies.
     // ---------- 2. signing in ----------
     await clickTab("admin"); await wait(2800);
     check("2a the Admin page loaded inside the panel", urlOf(viewShowing()) === "http://localhost:3000/admin" && (await inView(viewShowing(), "document.getElementById('marker').textContent")) === "ADMIN PAGE");
-    check("2b once the sign-in cookie is set the panel notices by itself: the REPORTS TAB APPEARS", (await tabIds()) === "dispatch,admin,estimates,reports", await tabIds());
+    check("2b once the sign-in cookie is set the panel notices by itself: the REPORTS TAB APPEARS", (await tabIds()) === "dispatch,admin,estimates,weekend,reports", await tabIds());
     check("2c the settings cog appears on the Admin screen", (await cogShown()) === true);
     check("2d the panel knows it is signed in", (await ui("window.overwatch.getSettings().then(s => s.adminSignedIn)")) === true);
     check("2e the choice of tab is remembered", store().lastTool === "admin");
@@ -211,7 +211,7 @@ const finish = async (code = 0) => { try { await session.defaultSession.cookies.
     // ---------- 3. the cog is only on the Admin screen; Reports shows while signed in ----------
     await clickTab("dispatch"); await wait(500);
     check("3a on the Dispatch screen the cog is hidden again (even though signed in)", (await cogShown()) === false);
-    check("3b ...but the Reports tab stays while signed in", (await tabIds()) === "dispatch,admin,estimates,reports");
+    check("3b ...but the Reports tab stays while signed in", (await tabIds()) === "dispatch,admin,estimates,weekend,reports");
     await clickTab("reports"); await wait(1500);
     check("3c the Reports tab opens the Reports page", urlOf(viewShowing()) === "http://localhost:3000/reports" && (await inView(viewShowing(), "document.getElementById('marker').textContent")) === "REPORTS PAGE", urlOf(viewShowing()));
     check("3d no cog on the Reports screen either", (await cogShown()) === false);
@@ -236,7 +236,7 @@ const finish = async (code = 0) => { try { await session.defaultSession.cookies.
     shot("s5-settings");
     await ui("document.getElementById('server-input').value = 'javascript:alert(1)'; document.getElementById('save-server').click()"); await wait(300);
     check("5b an unsafe address is refused with a message and nothing is saved", (await ui("document.getElementById('settings-error').textContent")).includes("Only http and https") && store().serverUrl === "http://localhost:3000");
-    check("5b2 the 'Tabs' section offers only Estimates (Dispatch, Admin and Reports are not hideable)", (await ui("document.getElementById('tabs-label').hidden")) === false && (await ui("[...document.querySelectorAll('#tab-toggles input')].length")) === 1);
+    check("5b2 the 'Tabs' section offers only Estimates and Weekend Recap (Dispatch, Admin and Reports are not hideable)", (await ui("document.getElementById('tabs-label').hidden")) === false && (await ui("[...document.querySelectorAll('#tab-toggles input')].length")) === 2);
     await ui("document.getElementById('server-input').value = 'http://127.0.0.1:3000'; document.getElementById('save-server').click()"); await wait(3500);
     check("5c a good address is saved and the tool page moves to it", store().serverUrl === "http://127.0.0.1:3000" && urlOf(viewShowing()) === "http://127.0.0.1:3000/admin", `${JSON.stringify(store().serverUrl)} ${urlOf(viewShowing())}`);
     check("5d the NEW server's own sign-in decides: its admin page set its own cookie, so the panel is signed in to it", (await ui("window.overwatch.getSettings().then(s => s.adminSignedIn)")) === true && (await cogShown()) === true);
@@ -264,7 +264,7 @@ const finish = async (code = 0) => { try { await session.defaultSession.cookies.
 
     // ---------- 8. tabs that must stay ----------
     const hdAdmin = await ui("window.overwatch.setToolHidden('admin', true)"), hdRep = await ui("window.overwatch.setToolHidden('reports', true)"), hdDisp = await ui("window.overwatch.setToolHidden('dispatch', true)");
-    check("8a the Admin, Dispatch and Reports tabs cannot be hidden, even when signed in and asking directly", [hdAdmin, hdRep, hdDisp].every((x) => x.ok === false) && (await tabIds()) === "dispatch,admin,estimates,reports" && !store().hiddenTools.length, JSON.stringify([hdAdmin, hdRep, hdDisp]));
+    check("8a the Admin, Dispatch and Reports tabs cannot be hidden, even when signed in and asking directly", [hdAdmin, hdRep, hdDisp].every((x) => x.ok === false) && (await tabIds()) === "dispatch,admin,estimates,weekend,reports" && !store().hiddenTools.length, JSON.stringify([hdAdmin, hdRep, hdDisp]));
 
     // ---------- 9. external links ----------
     await clickTab("dispatch"); await wait(700);
@@ -282,12 +282,12 @@ const finish = async (code = 0) => { try { await session.defaultSession.cookies.
     const body = await inView(viewShowing(), "document.body.innerText");
     check("10a with the server down the tool shows a plain 'Can't reach this tool' page", /Can't reach this tool/.test(body) && /npm run dev/.test(body) && /localhost:3000/.test(body), body.slice(0, 160));
     check("10b ...and tells an admin where to fix a wrong address (the settings file)", /Wrong address\?/.test(body) && /overwatch-store\.json/.test(body), body);
-    check("10c with no clear 'yes' from the server the panel assumes NOT signed in: the Reports tab goes away", (await tabIds()) === "dispatch,admin,estimates", await tabIds());
+    check("10c with no clear 'yes' from the server the panel assumes NOT signed in: the Reports tab goes away", (await tabIds()) === "dispatch,admin,estimates,weekend", await tabIds());
     shot("s10-down");
     ({ server, state } = await start(3000)); await wait(300);
     await ui("document.getElementById('reload-btn').click()"); await wait(3000);
     check("10d once the server is back the page recovers", (await inView(viewShowing(), "document.getElementById('marker') && document.getElementById('marker').textContent")) === "DISPATCH PAGE");
-    check("10e ...and since the cookie is still valid the Reports tab returns by itself", (await tabIds()) === "dispatch,admin,estimates,reports", await tabIds());
+    check("10e ...and since the cookie is still valid the Reports tab returns by itself", (await tabIds()) === "dispatch,admin,estimates,weekend,reports", await tabIds());
 
     // ---------- 11. tool pages get no access to the app ----------
     const exposed = await inView(viewShowing(), "typeof window.overwatch + '|' + typeof require + '|' + typeof process");
@@ -297,7 +297,7 @@ const finish = async (code = 0) => { try { await session.defaultSession.cookies.
     await clickTab("reports"); await wait(1200);
     const reportsView = viewShowing(); const viewsBefore = views().length;
     await inView(reportsView, "fetch('/logout')"); await wait(3000);
-    check("12a signing out while on the Reports tab: the Reports tab disappears", (await tabIds()) === "dispatch,admin,estimates", await tabIds());
+    check("12a signing out while on the Reports tab: the Reports tab disappears", (await tabIds()) === "dispatch,admin,estimates,weekend", await tabIds());
     check("12b ...the panel moves you to Dispatch (you were on an admin-only screen)", urlOf(viewShowing()) === "http://localhost:3000/" && (await tabs()).find((x) => x.active).id === "dispatch", urlOf(viewShowing()));
     check("12c ...the Reports page is thrown away, not just hidden", views().length === viewsBefore - 1 && views().every((x) => !urlOf(x).includes("/reports")), views().map(urlOf).join());
     check("12d ...and the cog is gone", (await cogShown()) === false);
@@ -306,16 +306,16 @@ const finish = async (code = 0) => { try { await session.defaultSession.cookies.
     // ---------- 13. the server stops accepting a cookie that is still there (a password change) ----------
     await clickTab("admin"); await wait(600);
     await inView(viewShowing(), "fetch('/admin')"); await wait(2500);   // a login: the server sets the cookie, no page load
-    check("13a signing in again (a cookie appears with no page load) brings the Reports tab back", (await tabIds()) === "dispatch,admin,estimates,reports", await tabIds());
+    check("13a signing in again (a cookie appears with no page load) brings the Reports tab back", (await tabIds()) === "dispatch,admin,estimates,weekend,reports", await tabIds());
     await inView(viewShowing(), "fetch('/__invalidate')"); await wait(200);
     await ui("document.getElementById('reload-btn').click()"); await wait(2500);
     const cookies = await session.defaultSession.cookies.get({ name: "overwatch_admin", url: "http://localhost:3000" });
-    check("13b the cookie is STILL in the browser, but the server says no, so the Reports tab and the cog go away", cookies.length === 1 && (await tabIds()) === "dispatch,admin,estimates" && (await cogShown()) === false, `${cookies.length} cookies, tabs ${await tabIds()}`);
+    check("13b the cookie is STILL in the browser, but the server says no, so the Reports tab and the cog go away", cookies.length === 1 && (await tabIds()) === "dispatch,admin,estimates,weekend" && (await cogShown()) === false, `${cookies.length} cookies, tabs ${await tabIds()}`);
 
     // ---------- 14. the periodic re-check ----------
     await inView(viewShowing(), "fetch('/__validate')");     // the server accepts it again; no page load, no cookie change
     await wait(4500);
-    check("14a with nothing else happening, the every-few-minutes re-check notices (here every 1.5 s) and the Reports tab returns", (await tabIds()) === "dispatch,admin,estimates,reports", await tabIds());
+    check("14a with nothing else happening, the every-few-minutes re-check notices (here every 1.5 s) and the Reports tab returns", (await tabIds()) === "dispatch,admin,estimates,weekend,reports", await tabIds());
     await clickTab("reports"); await wait(1200);   // leave it on Reports so the next launch has something to restore
     check("14b the last tab (Reports) is remembered", store().lastTool === "reports");
     await finish(0);
@@ -324,7 +324,7 @@ const finish = async (code = 0) => { try { await session.defaultSession.cookies.
   if (PHASE === "2") {
     // second launch with the same settings folder: still signed in (the cookie persisted), reopens where it was
     check("P2a it comes back docked at the remembered width (320)", same(win().getBounds(), docked(320)), JSON.stringify(win().getBounds()));
-    check("P2b the sign-in survived the restart, so the Reports tab is there from the first moment", (await tabIds()) === "dispatch,admin,estimates,reports", await tabIds());
+    check("P2b the sign-in survived the restart, so the Reports tab is there from the first moment", (await tabIds()) === "dispatch,admin,estimates,weekend,reports", await tabIds());
     check("P2c it reopens on the last tab, Reports, and loaded it", urlOf(viewShowing()) === "http://localhost:3000/reports", urlOf(viewShowing()));
     check("P2d the settings file is in the new format and the address is remembered", store().version === 2 && store().serverUrl === "http://localhost:3000");
     let b2;
@@ -340,7 +340,7 @@ const finish = async (code = 0) => { try { await session.defaultSession.cookies.
 
   if (PHASE === "3") {
     check("P3a an old-format settings file is understood", store().serverUrl === "http://localhost:3000" || store().version === undefined, JSON.stringify(store()));
-    check("P3b the panel works, signed out: Dispatch and Admin tabs only, no cog", (await tabIds()) === "dispatch,admin,estimates" && (await cogShown()) === false && urlOf(viewShowing()) === "http://localhost:3000/");
+    check("P3b the panel works, signed out: Dispatch and Admin tabs only, no cog", (await tabIds()) === "dispatch,admin,estimates,weekend" && (await cogShown()) === false && urlOf(viewShowing()) === "http://localhost:3000/");
     await finish(0);
   }
 })().catch(async (e) => { results.push({ name: "CRASH", ok: false, detail: e.stack || String(e) }); fs.writeFileSync(RESULT, JSON.stringify(results, null, 1)); app.exit(2); });
