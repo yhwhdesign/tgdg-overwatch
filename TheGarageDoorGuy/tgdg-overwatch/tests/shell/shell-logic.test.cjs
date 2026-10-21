@@ -111,19 +111,19 @@ eq("F11 the input is never modified", JSON.stringify(input), copy);
 // ================= G. who sees what =================
 const REG = require("../../src/tools.js").TOOLS;
 const ids = (list) => list.map((t) => t.id);
-eq("G1 the real registry: Dispatch, Admin, Estimates and Reports", ids(REG), ["dispatch", "admin", "estimates", "reports"]);
-eq("G2 Dispatch and Admin can never be hidden; Estimates is for everyone and can be hidden; Reports is admin-only; only Admin hosts the settings", [REG.map((t) => !!t.core), REG.map((t) => !!t.adminOnly), REG.map((t) => !!t.hostsPanelSettings)], [[true, true, false, false], [false, false, false, true], [false, true, false, false]]);
-eq("G3 signed OUT: Reports is not listed (Estimates is)", ids(L.visibleTools(REG, [], false)), ["dispatch", "admin", "estimates"]);
-eq("G4 signed IN: Reports is listed", ids(L.visibleTools(REG, [], true)), ["dispatch", "admin", "estimates", "reports"]);
+eq("G1 the real registry: Dispatch, Admin, Estimates, Weekend Recap and Reports", ids(REG), ["dispatch", "admin", "estimates", "weekend", "reports"]);
+eq("G2 Dispatch and Admin can never be hidden; Estimates is for everyone and can be hidden; Reports is admin-only; only Admin hosts the settings", [REG.map((t) => !!t.core), REG.map((t) => !!t.adminOnly), REG.map((t) => !!t.hostsPanelSettings)], [[true, true, false, false, false], [false, false, false, false, true], [false, true, false, false, false]]);
+eq("G3 signed OUT: Reports is not listed (Estimates is)", ids(L.visibleTools(REG, [], false)), ["dispatch", "admin", "estimates", "weekend"]);
+eq("G4 signed IN: Reports is listed", ids(L.visibleTools(REG, [], true)), ["dispatch", "admin", "estimates", "weekend", "reports"]);
 eq("G5 only an exact true counts as signed in (undefined, 'yes', 1 do not)", [undefined, null, "yes", 1, 0, ""].map((v) => ids(L.visibleTools(REG, [], v)).includes("reports")), [false, false, false, false, false, false]);
 eq("G6 a hidden tool is not listed", ids(L.visibleTools([{ id: "a" }, { id: "b" }], ["b"], false)), ["a"]);
-eq("G7 a core tool cannot be hidden, even if the settings file says so", ids(L.visibleTools(REG, ["dispatch", "admin"], false)), ["dispatch", "admin", "estimates"]);
-eq("G8 an admin-only tool stays unlisted even if it is not hidden and no flag is given", ids(L.visibleTools(REG, [])), ["dispatch", "admin", "estimates"]);
-eq("G8b Estimates can be hidden per machine", ids(L.visibleTools(REG, ["estimates"], false)), ["dispatch", "admin"]);
+eq("G7 a core tool cannot be hidden, even if the settings file says so", ids(L.visibleTools(REG, ["dispatch", "admin"], false)), ["dispatch", "admin", "estimates", "weekend"]);
+eq("G8 an admin-only tool stays unlisted even if it is not hidden and no flag is given", ids(L.visibleTools(REG, [])), ["dispatch", "admin", "estimates", "weekend"]);
+eq("G8b Estimates can be hidden per machine", ids(L.visibleTools(REG, ["estimates"], false)), ["dispatch", "admin", "weekend"]);
 eq("G9 no tools, no hidden list: fine", [L.visibleTools([], [], true), L.visibleTools(undefined, undefined, true)], [[], []]);
 const adminTool = REG.find((t) => t.id === "admin"), dispatchTool = REG.find((t) => t.id === "dispatch"), reportsTool = REG.find((t) => t.id === "reports");
 eq("G10 the settings cog: only a signed-in admin, on the Admin screen", [L.settingsButtonVisible(true, adminTool), L.settingsButtonVisible(true, dispatchTool), L.settingsButtonVisible(true, reportsTool), L.settingsButtonVisible(false, adminTool), L.settingsButtonVisible(undefined, adminTool), L.settingsButtonVisible("yes", adminTool), L.settingsButtonVisible(true, null)], [true, false, false, false, false, false, false]);
-check("G11 the real tab layout still works with Reports in the list", L.layoutTabs(L.visibleTools(REG, [], true), "reports", 340).visible.length === 4);
+check("G11 the real tab layout (five tools) still works with Reports in the list, and the active tab is never hidden", L.layoutTabs(L.visibleTools(REG, [], true), "reports", 340).visible.length === 5 && L.layoutTabs(L.visibleTools(REG, [], true), "reports", 120).visible.some((t) => t.id === "reports"));
 
 // ================= H. Job Watch alerts =================
 for (const [minutes, text] of [[0, "0m"], [1, "1m"], [59, "59m"], [60, "1h"], [61, "1h 1m"], [90, "1h 30m"], [100, "1h 40m"], [119, "1h 59m"], [120, "2h"], [1440, "24h"], [-5, "0m"], [NaN, "0m"], [undefined, "0m"], ["45", "45m"], [59.6, "1h"], [null, "0m"]]) eq(`H1 formatDuration(${minutes}) is ${text}`, L.formatDuration(minutes), text);
