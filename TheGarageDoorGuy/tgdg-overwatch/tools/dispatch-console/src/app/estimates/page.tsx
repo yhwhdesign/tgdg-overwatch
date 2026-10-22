@@ -111,7 +111,15 @@ export default function EstimatesPage() {
     setState({ kind: "loading" });
     try {
       const res = await fetch(fresh ? "/api/estimates?fresh=1" : "/api/estimates");
-      const data = (await res.json()) as { ok?: boolean; error?: string; checkedAt?: string; report?: unknown };
+      // A sign-in page or a "timed out" page is not JSON: say what happened instead of showing the browser's parsing error.
+      if (res.redirected || res.status === 401) throw new Error("Sign in again to see the estimates.");
+      if (res.status === 408 || res.status === 504) throw new Error("Housecall Pro took too long to answer. Try again in a minute.");
+      let data: { ok?: boolean; error?: string; checkedAt?: string; report?: unknown };
+      try {
+        data = (await res.json()) as typeof data;
+      } catch {
+        throw new Error(`The server sent something unexpected (HTTP ${res.status}). Try again in a minute.`);
+      }
       if (!res.ok || data.ok !== true) throw new Error(typeof data.error === "string" ? data.error : "The server could not read estimates.");
       if (!isReport(data.report)) throw new Error("The server's answer was not what was expected.");
       setState({ kind: "ready", report: data.report, checkedAt: typeof data.checkedAt === "string" ? data.checkedAt : "" });
