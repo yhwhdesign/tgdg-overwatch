@@ -125,3 +125,53 @@ model NotifySent {
 
   @@index([sentAt])
 }
+
+// ---- Order tracker (Admin only). Typed in by hand; nothing here comes from or goes to Housecall Pro. ----
+
+// A supplier the company orders from. No passwords are ever stored here.
+model Vendor {
+  id            String   @id @default(cuid())
+  name          String   @unique
+  // The vendor's main website and the page where orders are placed or checked.
+  website       String?
+  portalUrl     String?
+  accountNumber String?
+  contactName   String?
+  phone         String?
+  email         String?
+  notes         String?
+  active        Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  orders        Order[]
+}
+
+// One order: parts for a customer's job or estimate, or stock for the shop.
+model Order {
+  id             String    @id @default(cuid())
+  // "customer" (for a job/estimate) or "stock" (for the shop)
+  kind           String    @default("customer")
+  // "to-order", "ordered", "shipped", "arrived", "done", "cancelled"
+  status         String    @default("to-order")
+  poNumber       String?
+  vendorId       String?
+  vendor         Vendor?   @relation(fields: [vendorId], references: [id], onDelete: SetNull)
+  // The HCP job / estimate NUMBER people type into Housecall Pro (not an internal id).
+  jobNumber      String?
+  estimateNumber String?
+  // What was ordered, in plain words ("2x 16x7 torsion springs, 207 RW").
+  items          String
+  // Total cost in cents, when known.
+  costCents      Int?
+  // Calendar dates (YYYY-MM-DD) in the business time zone.
+  orderedOn      String?
+  expectedOn     String?
+  arrivedOn      String?
+  trackingNumber String?
+  notes          String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@index([status])
+  @@index([vendorId])
+}

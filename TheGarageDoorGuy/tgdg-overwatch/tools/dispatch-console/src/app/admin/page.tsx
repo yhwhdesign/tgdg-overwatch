@@ -366,6 +366,16 @@ export default function AdminPage() {
 
         {view === "list" && (
           <div className="flex flex-col gap-6">
+            <nav data-admin-links className="grid grid-cols-2 gap-2">
+              <a href="/reports" className="rounded-lg border border-black/10 bg-white p-3 text-sm font-black uppercase text-brand-black hover:border-brand-orange">
+                Reports &rarr;
+                <span className="block text-[11px] font-semibold normal-case text-brand-gray">How the company and each tech are doing</span>
+              </a>
+              <a href="/admin/orders" className="rounded-lg border border-black/10 bg-white p-3 text-sm font-black uppercase text-brand-black hover:border-brand-orange">
+                Orders &rarr;
+                <span className="block text-[11px] font-semibold normal-case text-brand-gray">Parts on order and the vendor list</span>
+              </a>
+            </nav>
             <RefreshPanel onSignedOut={() => apply({ view: "login", techs: [], error: null })} />
             <NotifyPanel techNames={techs.map((t) => t.name)} onSignedOut={() => apply({ view: "login", techs: [], error: null })} />
             <section className="flex flex-col gap-3">
