@@ -133,7 +133,7 @@ function renderAlerts() {
   if (signature === alertsSignature) return; // nothing changed: leave the buttons alone so a click is never lost mid-press
   alertsSignature = signature;
   alertsEl.replaceChildren();
-  for (const { type, id, message, url, kind } of shown) {
+  for (const { type, id, message } of shown) {
     const bar = el("button", type === "done" ? "alert done" : "alert");
     bar.type = "button";
     bar.dataset.alert = id;
@@ -143,15 +143,7 @@ function renderAlerts() {
     bar.addEventListener("click", () => window.overwatch.dismissJobWatch(id));
     const wrap = el("div", type === "done" ? "alert-wrap done" : "alert-wrap");
     wrap.appendChild(bar);
-    if (url) {
-      // a separate button under the bar (a button inside a button is not valid), and it must not dismiss the bar
-      const go = el("button", "alert-go", kind === "estimate" ? "Go to estimate" : "Go to job");
-      go.type = "button";
-      go.dataset.goto = id;
-      go.title = kind === "estimate" ? "Open this estimate in Housecall Pro" : "Open this ticket in Housecall Pro";
-      go.addEventListener("click", () => window.overwatch.openJobWatchJob(id));
-      wrap.appendChild(go);
-    }
+    // No "Go to job" button: the Housecall Pro app can't open web links, so people look up the number in the title.
     alertsEl.appendChild(wrap);
   }
   if (items.length > MAX_ALERTS_SHOWN) alertsEl.appendChild(el("div", "alert-more", `+${items.length - MAX_ALERTS_SHOWN} more (dismiss one to see the next)`));

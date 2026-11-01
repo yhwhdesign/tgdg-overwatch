@@ -31,11 +31,8 @@ export function JobWatchBars() {
                 <p data-field="notes" className={`mt-1 whitespace-pre-line break-words rounded bg-black/20 px-2 py-1.5 text-xs leading-snug ${item.message.hasNotes ? "" : "italic opacity-85"}`}>{item.message.notes}</p>
               )}
               <div className="mt-1.5 flex gap-2">
-                {item.url && (
-                  <a data-action="go" href={item.url} target="_blank" rel="noopener noreferrer" className="rounded border border-white/70 bg-white/15 px-3 py-1 text-xs font-bold hover:bg-white/30">
-                    {item.kind === "estimate" ? "Go to estimate" : "Go to job"}
-                  </a>
-                )}
+                {/* No "Go to job" link: the Housecall Pro phone app can't open web links, so dispatchers look the
+                    job or estimate up by the number in the title instead. */}
                 <button type="button" data-action="dismiss" onClick={() => dismiss(item.id)} className="rounded border border-white/40 px-3 py-1 text-xs font-bold hover:bg-white/20">
                   Dismiss
                 </button>

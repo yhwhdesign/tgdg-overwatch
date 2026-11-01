@@ -220,11 +220,6 @@ export default function EstimatesPage() {
                       {money(r.amountCents)}
                       {r.suspect ? <span className="ml-1 text-[10px] font-bold text-brand-orange-dark">(check this amount)</span> : null}
                     </p>
-                    {r.url ? (
-                      <a href={r.url} target="_blank" rel="noopener noreferrer" className="rounded bg-brand-orange px-2.5 py-1 text-[11px] font-bold text-white">
-                        Go to estimate
-                      </a>
-                    ) : null}
                   </div>
                 </li>
               ))}

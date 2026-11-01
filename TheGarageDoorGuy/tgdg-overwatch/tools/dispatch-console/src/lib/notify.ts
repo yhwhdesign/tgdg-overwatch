@@ -123,20 +123,10 @@ function duration(minutes: number): string {
   return m % 60 === 0 ? `${m / 60}h` : `${Math.floor(m / 60)}h ${m % 60}m`;
 }
 
-function safeUrl(v: unknown): string | null {
-  if (typeof v !== "string" || v.length > 300 || /[\u0000- \u007f]/.test(v)) return null;
-  try {
-    const u = new URL(v);
-    const host = u.hostname.toLowerCase();
-    if (u.protocol !== "https:" || u.username || u.password || u.port) return null;
-    return host === "housecallpro.com" || host.endsWith(".housecallpro.com") ? u.href : null;
-  } catch {
-    return null;
-  }
-}
-
 export function itemsFromWatch(watch: WatchLike): NotifyItem[] {
   const items: NotifyItem[] = [];
+  // Messages carry no link (url: null): the Housecall Pro phone app shows "page not found" for web links, so the
+  // job or estimate number in the message is what people look up.
   for (const raw of Array.isArray(watch.alerts) ? watch.alerts : []) {
     const a = rec(raw);
     const id = str(a.id, 120);
@@ -151,7 +141,7 @@ export function itemsFromWatch(watch: WatchLike): NotifyItem[] {
         message: {
           title: "Estimate waiting",
           body: `${str(a.label, 60)} has had no answer for ${days} ${days === 1 ? "day" : "days"}. Created ${str(a.startedLabel, 12) || "earlier"}${Array.isArray(a.techs) && a.techs.length ? ` (${names(a.techs)})` : ""}. No option is approved or declined yet.`,
-          url: safeUrl(a.url), priority: 3, tag: "hourglass_flowing_sand",
+          url: null, priority: 3, tag: "hourglass_flowing_sand",
         },
       });
     } else {
@@ -160,7 +150,7 @@ export function itemsFromWatch(watch: WatchLike): NotifyItem[] {
         message: {
           title: "Job running long",
           body: `${names(a.techs)} ${Array.isArray(a.techs) && a.techs.length > 1 ? "have" : "has"} been on "${str(a.label, 60)}" for ${duration(num(a.minutesOnJob))} (normal is ${duration(limit)}). Started ${str(a.startedLabel, 12) || "earlier"}.`,
-          url: safeUrl(a.url), priority: 4, tag: "warning",
+          url: null, priority: 4, tag: "warning",
         },
       });
     }
@@ -178,7 +168,7 @@ export function itemsFromWatch(watch: WatchLike): NotifyItem[] {
         message: {
           title: "Estimate finished",
           body: `${names(c.techs)} finished "${str(c.label, 60)}" at ${str(c.completedLabel, 12) || "just now"}${took}.${lines.length ? `\n${lines.join("\n")}` : ""}`,
-          url: safeUrl(c.url), priority: 3, tag: "memo",
+          url: null, priority: 3, tag: "memo",
         },
       });
     } else {
@@ -187,8 +177,8 @@ export function itemsFromWatch(watch: WatchLike): NotifyItem[] {
         id, kind: "job-finished", eventAt: done,
         message: {
           title: "Job finished",
-          body: `${names(c.techs)} finished "${str(c.label, 60)}" at ${str(c.completedLabel, 12) || "just now"}${took}. Open the job to read the notes.`,
-          url: safeUrl(c.url), priority: 3, tag: "white_check_mark",
+          body: `${names(c.techs)} finished "${str(c.label, 60)}" at ${str(c.completedLabel, 12) || "just now"}${took}. Look it up in Housecall Pro to read the notes.`,
+          url: null, priority: 3, tag: "white_check_mark",
         },
       });
     }

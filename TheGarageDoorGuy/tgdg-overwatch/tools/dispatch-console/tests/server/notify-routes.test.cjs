@@ -181,7 +181,7 @@ process.env.BUSINESS_TIMEZONE = "Etc/UTC";
   res = await ask({ authorization: "Bearer cron-secret" });
   let b = await res.json();
   check("F6 inside the hours it tells Jasen about the two things he chose (the finished estimate and the long install), not the job he did not", res.status === 200 && b.ok === true && b.sent === 2 && pushes.length === 2 && pushes.every((p) => p.sub.endpoint === "https://fcm.googleapis.com/fcm/send/jasen-phone"), JSON.stringify([b, pushes.map((p) => p.payload.title)]));
-  check("F7 the messages carry the tap-to-open link and no notes", pushes.some((p) => p.payload.url === "https://pro.housecallpro.com/app/estimates/csr_1") && !pushes.some((p) => /4471/.test(JSON.stringify(p.payload))));
+  check("F7 the messages carry no link (the HCP phone app can't open web links) and no notes", pushes.length > 0 && pushes.every((p) => p.payload.url == null) && !pushes.some((p) => /4471/.test(JSON.stringify(p.payload))));
   pushes.length = 0;
   res = await ask({ authorization: "Bearer cron-secret" }, "POST"); b = await res.json();
   check("F8 asking again (POST works too) tells nobody twice", b.sent === 0 && b.alreadySent === 2 && pushes.length === 0, JSON.stringify(b));
