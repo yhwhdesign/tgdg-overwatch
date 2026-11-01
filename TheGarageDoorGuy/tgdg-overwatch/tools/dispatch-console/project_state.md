@@ -281,3 +281,7 @@ Open decisions: hosting plan (Vercel Hobby is non-commercial); weekly Monday 8:0
 - USER DECISION: remove the Go to job / Go to estimate buttons everywhere; the console runs alongside HCP, so dispatchers type the job or estimate number into HCP. Every bar/message already carries the number ("Service #4521", "Estimate #8802").
 - CHANGED: website Job Watch bars (JobWatchBars.tsx), Estimates page, Weekend recap page, phone alerts (notify.ts: url is always null; job-finished text now "Look it up in Housecall Pro to read the notes."; safeUrl removed), desktop panel (src/sidepanel.js; main.js openJobWatchJob handler left in place, unused). The server still computes job/estimate URLs (job-watch.ts, estimates.ts) but nothing shows them; HCP_JOB_URL_TEMPLATE / HCP_ESTIMATE_URL_TEMPLATE are now unused.
 - TESTS updated: job-watch-bars A8, estimates-page E4, weekend-page A12, notify A2/A2b/A7, notify-routes F7, desktop e2e GJ1/GJ5/ES3 (e2e NOT run here: needs Electron; syntax checked).
+
+## Rule: Overwatch NEVER writes to Housecall Pro (2026-11-01)
+- USER DECISION: no booking (or any other write) into HCP from the app, ever: "not worth a code error messing with HCP". Overwatch only READS HCP data. Booking-into-HCP is OFF the roadmap.
+- Enforced by tests/unit/hcp-read-only.test.mts. The confirm screen now tells the dispatcher to book it in HCP themselves (src/app/page.tsx).

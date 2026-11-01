@@ -1032,7 +1032,7 @@ export default function DispatchConsole() {
               Quote the customer: <span className="font-bold text-brand-black">{confirmed.window}</span>
             </p>
             <p className="text-xs text-brand-gray">
-              (Booking this into Housecall Pro isn&apos;t wired up yet &mdash; this just confirms the slot for now.)
+              Now book it in Housecall Pro with this tech and time. (Overwatch only reads from Housecall Pro; it never books or changes anything there.)
             </p>
             <button
               onClick={reset}
