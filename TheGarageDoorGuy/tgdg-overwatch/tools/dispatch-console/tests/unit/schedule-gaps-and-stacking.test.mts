@@ -22,7 +22,7 @@ const tomorrow = (busy: BusyBlock[], zip: string | null = "72201") => view(busy,
   const v = tomorrow([]);
   eq("A1 empty day: one gap covering the whole window", v.gaps.map(rng), ["08:00-18:00"]);
   eq("A1 window is business hours", rng(v.window), "08:00-18:00");
-  check("A1 nothing booked, no neighbors, fit open", v.booked.length === 0 && v.gaps[0].prev === null && v.gaps[0].next === null && v.gaps[0].fit === "open");
+  check("A1 nothing booked, no neighbors: an open day (the customer would be his first call)", v.booked.length === 0 && v.gaps[0].prev === null && v.gaps[0].next === null && v.gaps[0].fit === "open-day" && v.gaps[0].route?.kind === "open-day");
   check("A1 tomorrow has no 'passed' shading", v.passedUntil === null);
 }
 {
@@ -92,13 +92,17 @@ const gapBetween = (zipA: string | null, zipB: string | null, customer: string |
   tomorrow([call(1, 8, 0, 9, 0, zipA), call(1, 12, 0, 18, 0, zipB)], customer).gaps[0];
 {
   const g = gapBetween("72201", "72202");
-  check("D1 between a same-zip call and a near-zip call: between-two", g.fit === "between-two" && g.fitMinutes === 3, JSON.stringify([g.fit, g.fitMinutes]));
+  // Route rule: detour = drive(A -> customer) + drive(customer -> B) - drive(A -> B). Customer is AT A (same zip), so 0 + 3 - 3 = 0.
+  check("D1 between a same-zip call and a near-zip call: between-two, 0 extra minutes", g.fit === "between-two" && g.fitMinutes === 0 && g.route?.kind === "between", JSON.stringify([g.fit, g.fitMinutes]));
   eq("D1 neighbors report near, same-zip and minutes", [g.prev!.near, g.prev!.sameZip, g.prev!.minutes, g.next!.near, g.next!.sameZip, g.next!.minutes], [true, true, 0, true, false, 3]);
   eq("D2 same zip both sides: between-two, 0 minutes", [gapBetween("72201", "72201").fit, gapBetween("72201", "72201").fitMinutes], ["between-two", 0]);
-  eq("D3 one near neighbor, one far: next-to-one", [gapBetween("72201", "72015").fit, gapBetween("72201", "72015").fitMinutes], ["next-to-one", 0]);
-  eq("D3b ... either side", gapBetween("72015", "72201").fit, "next-to-one");
+  // The customer sits right at A, so going A -> customer -> B costs nothing extra even though B is far: he was driving that way anyway.
+  eq("D3 customer at one end of a long drive: on his route (between-two, 0 extra)", [gapBetween("72201", "72015").fit, gapBetween("72201", "72015").fitMinutes], ["between-two", 0]);
+  eq("D3b ... either side", gapBetween("72015", "72201").fit, "between-two");
   eq("D4 both far: open, no minutes", [gapBetween("72015", "72015").fit, gapBetween("72015", "72015").fitMinutes], ["open", null]);
-  eq("D5 72205 is 10 min away: near; 72204 is 11: not", [gapBetween("72205", "72205").fit, gapBetween("72204", "72204").fit], ["between-two", "open"]);
+  // Both jobs in 72205 (10 min away): out 10 and back 10 = 20 extra minutes. Too far off his route.
+  eq("D5 out-and-back to the same far-ish zip costs both legs: 20 extra minutes, open", [gapBetween("72205", "72205").fit, gapBetween("72205", "72205").route?.minutes], ["open", 20]);
+  eq("D5b ...but right after a single 72205 job at the end of the day it is only 10: next-to-one", [tomorrow([call(1, 8, 0, 9, 0, "72205")]).gaps[0].fit, tomorrow([call(1, 8, 0, 9, 0, "72205")]).gaps[0].fitMinutes], ["next-to-one", 10]);
   eq("D6 an unknown zip is never 'near' (and never crashes)", [gapBetween("90210", "72201").fit, gapBetween(null, null).fit], ["next-to-one", "open"]);
   const edge = tomorrow([call(1, 9, 0, 18, 0, "72201")]).gaps[0];
   eq("D7 first-of-day gap with a near call after it: next-to-one", [edge.prev, edge.fit], [null, "next-to-one"]);
@@ -138,12 +142,12 @@ const gapBetween = (zipA: string | null, zipB: string | null, customer: string |
   const b2 = bestFit(view(late))!;
   eq("E6 near call only BEFORE the gap: suggest right after it", [b2.kind, t(b2.slotStart)], ["next-to-one", "15:00"]);
   const mid = bestFit(view([call(1, 8, 0, 9, 0, "72015"), call(1, 14, 0, 18, 0, "72201")]))!;
-  eq("E7 near call only AFTER a long gap: suggest ending right as it starts (13:00-14:00)", [mid.kind, t(mid.slotStart)], ["next-to-one", "13:00"]);
+  eq("E7 customer right at the job AFTER a long gap: suggest ending right as it starts (13:00-14:00)", [mid.kind, t(mid.slotStart)], ["between-two", "13:00"]);
 }
 {
   const a = view([]);
   const b = bestFit(a)!;
-  eq("E8 nothing booked anywhere: plain open, earliest", [b.kind, b.date, b.dayLabel], ["open", "2026-10-05", "Today"]);
+  eq("E8 nothing booked anywhere: an open day, earliest", [b.kind, b.date, b.dayLabel], ["open-day", "2026-10-05", "Today"]);
   const s = soonestOpening(a)!;
   eq("E9 soonest opening is today's first slot", [s.date, s.dayLabel, t(s.start)], ["2026-10-05", "Today", "10:00"]);
   const closed = generateDispatchAvailability(new Date(Date.UTC(2026, 9, 5, 23, 30)), [], fit("72201"));
@@ -187,10 +191,10 @@ const gapBetween = (zipA: string | null, zipB: string | null, customer: string |
   const v2b = tomorrow([{ ...call(1, 9, 0, 10, 0, "72201"), label: "should be ignored" }]);
   eq("H2 a title on a job is ignored", v2b.booked[0].label, null);
   const g3 = tomorrow([evt(1, 8, 0, 9, 0, "Product pickup")]).gaps[0];
-  eq("H3 the gap after an event knows it follows an event, and by its title", [g3.prev!.kind, g3.prev!.label, g3.prev!.near, g3.prev!.minutes, g3.fit], ["event", "Product pickup", false, null, "open"]);
+  eq("H3 the gap after an event knows it follows an event, and by its title", [g3.prev!.kind, g3.prev!.label, g3.prev!.near, g3.prev!.minutes, g3.fit], ["event", "Product pickup", false, null, "open-day"]);
   const g4 = tomorrow([evt(1, 8, 0, 9, 0, "Product pickup"), call(1, 12, 0, 18, 0, "72201")]).gaps[0];
   eq("H4 between an event and a nearby job is only next-to-one, never between-two", [g4.fit, g4.prev!.kind, g4.next!.kind, g4.next!.near], ["next-to-one", "event", "job", true]);
-  eq("H5 between two events: just open", tomorrow([evt(1, 8, 0, 9, 0, "A"), evt(1, 12, 0, 18, 0, "B")]).gaps[0].fit, "open");
+  eq("H5 between two events and no jobs: still an open day (events have no location)", tomorrow([evt(1, 8, 0, 9, 0, "A"), evt(1, 12, 0, 18, 0, "B")]).gaps[0].fit, "open-day");
   const v6 = tomorrow([evt(1, 8, 0, 10, 0, "Training"), call(1, 9, 0, 11, 0, "72201")]);
   eq("H6 an event overlapping a job: both are shaded and the day opens after both", [v6.booked.map((b) => b.kind), v6.gaps.map(rng)], [["event", "job"], ["11:00-18:00"]]);
   const v7 = tomorrow([evt(1, 8, 0, 18, 0, "PTO")]);
@@ -201,6 +205,56 @@ const gapBetween = (zipA: string | null, zipB: string | null, customer: string |
   eq("H9 a day asked for specifically carries events too (clipped to business hours)", v9.booked.map((b) => [b.kind, b.label, rng(b)]), [["event", "Product pickup", "08:00-08:30"]]);
   const v10 = tomorrow([evt(1, 7, 0, 8, 30, null)]);
   eq("H10 an event with no title is still shown", v10.booked.map((b) => [b.kind, b.label]), [["event", null]]);
+}
+
+// ---------- I. the route rule with exact map points (addresses) ----------
+{
+  // Three points on a line in Little Rock, about 2.5 miles apart: West (W), Middle (M), East (E).
+  const W = { lat: 34.7465, lng: -92.3500 };
+  const M = { lat: 34.7465, lng: -92.3060 };
+  const E = { lat: 34.7465, lng: -92.2620 };
+  const FAR = { lat: 34.5640, lng: -92.5868 }; // Benton
+  const at = (day: number, sh: number, eh: number, p: { lat: number; lng: number }, zip = "72201"): BusyBlock => ({ ...call(day, sh, 0, eh, 0, zip), lat: p.lat, lng: p.lng });
+  const fitAt = (p: { lat: number; lng: number }): FitOptions => ({ customerZip: "72201", customerPoint: p, proximity: makeProximity(ZIP_CENTROIDS) });
+  const tm = (busy: BusyBlock[], p: { lat: number; lng: number }) => generateDispatchAvailability(NOW, busy, fitAt(p)).tomorrow;
+
+  const g1 = tm([at(1, 8, 9, W), at(1, 13, 18, E)], M).gaps[0];
+  eq("I1 customer right between his two jobs: 0 extra minutes, between-two", [g1.fit, g1.route?.kind, g1.route?.minutes], ["between-two", "between", 0]);
+
+  const g2 = tm([at(1, 8, 9, W), at(1, 13, 18, W)], E).gaps[0];
+  check("I2 out and back to the other side of town: both legs count (> 10), open", g2.fit === "open" && g2.route!.kind === "between" && g2.route!.minutes! > 10, JSON.stringify(g2.route));
+
+  const v3 = tm([at(1, 12, 18, M)], W);
+  eq("I3 before his first job: drive from the customer to that job", [v3.gaps[0].route?.kind, v3.gaps[0].fit, v3.gaps[0].fitMinutes], ["before-first", "next-to-one", v3.gaps[0].next!.minutes]);
+  const a3 = generateDispatchAvailability(NOW, [at(1, 12, 18, M), at(2, 8, 18, M), at(3, 8, 18, M), at(4, 8, 18, M), at(5, 8, 18, M), at(6, 8, 18, M)], fitAt(W));
+  // Today is empty (an open day), but a slot that leads straight into his first job tomorrow beats it.
+  eq("I3b ...suggested flush before that first job", [bestFit(a3)!.dayLabel, t(bestFit(a3)!.slotStart), bestFit(a3)!.route?.kind], ["Tomorrow", "11:00", "before-first"]);
+
+  const g4 = tm([at(1, 8, 12, M)], E).gaps[0];
+  eq("I4 after his last job: drive from that job to the customer", [g4.route?.kind, g4.fit], ["after-last", "next-to-one"]);
+
+  const g5 = tm([at(1, 8, 9, W), { ...call(1, 9, 0, 10, 0), kind: "event", label: "Supply run" }, at(1, 13, 18, E)], M).gaps[0];
+  eq("I5 an event in between is skipped: measured from the JOB before it", [g5.prev?.kind, g5.route?.kind, g5.route?.minutes], ["event", "between", 0]);
+
+  const g6 = tm([at(1, 8, 9, FAR), at(1, 13, 18, FAR)], M).gaps[0];
+  check("I6 his day is in Benton: far off his route, open (minutes still reported)", g6.fit === "open" && g6.route!.minutes! > 30, JSON.stringify(g6.route));
+
+  // Ranking: on his route (<= 10) > open day > off his route.
+  const onRoute = bestFit(generateDispatchAvailability(NOW, [at(0, 8, 9, W), at(0, 13, 18, E)], fitAt(M)))!;
+  eq("I7 on-route gap today wins", [onRoute.kind, onRoute.dayLabel, onRoute.route?.minutes], ["between-two", "Today", 0]);
+  const farWeek = [0, 1, 2, 3, 4, 5, 6].flatMap((d) => [at(d, 8, 9, FAR), at(d, 13, 18, FAR)]);
+  const farOnly = bestFit(generateDispatchAvailability(NOW, farWeek, fitAt(M)))!;
+  check("I8 every day off his route: best is the smallest detour, kind open", farOnly.kind === "open" && farOnly.route!.minutes! > 10, JSON.stringify(farOnly.route));
+  const farButFreeDay = farWeek.filter((b) => b.start.getUTCDate() !== H(4, 12, 0).getUTCDate());
+  const withFree = bestFit(generateDispatchAvailability(NOW, farButFreeDay, fitAt(M)))!;
+  eq("I9 an open day beats driving across town", [withFree.kind, withFree.date], ["open-day", "2026-10-09"]);
+
+  // Locations never leave the server.
+  const shown = JSON.stringify(tm([at(1, 8, 9, W)], M));
+  check("I10 booked blocks never carry map points to the screen", !shown.includes("lat") && !shown.includes("34.7465"));
+  // A job with no map point falls back to its zip.
+  const g11 = tm([call(1, 8, 0, 9, 0, "72201"), call(1, 13, 0, 18, 0, "72201")], M).gaps[0];
+  eq("I11 jobs with only a zip still score (customer in that same zip)", [g11.fit, g11.route?.minutes], ["between-two", 0]);
 }
 
 console.log(`TZ=${process.env.TZ}  ${passes} passed, ${failures} failed`);

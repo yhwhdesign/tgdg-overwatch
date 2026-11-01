@@ -45,7 +45,8 @@ export interface HcpJob {
     appointments?: HcpAppointment[] | null;
   } | null;
   assigned_employees?: { id: string }[] | null;
-  address?: { zip?: string | null } | null;
+  /** HCP sends latitude/longitude with the address (as strings or numbers); we keep only the point and the zip. */
+  address?: { zip?: string | null; latitude?: string | number | null; longitude?: string | number | null } | null;
   job_fields?: { job_type?: unknown; business_unit?: unknown } | null;
   /** When the tech tapped On my way / Start / Finish in the HCP app (empty until they do). Job Watch reads these. */
   work_timestamps?: { on_my_way_at?: string | null; started_at?: string | null; completed_at?: string | null } | null;
@@ -141,6 +142,20 @@ export interface AppointmentRow {
   endTime: Date;
   status: string;
   zip: string | null;
+  /** The job's map point, when HCP has one. */
+  lat: number | null;
+  lng: number | null;
+}
+
+/** A usable map point from HCP's address, or nulls. Rejects junk and the 0,0 "unknown" placeholder. */
+export function jobPoint(job: HcpJob): { lat: number | null; lng: number | null } {
+  const lat = Number(job.address?.latitude);
+  const lng = Number(job.address?.longitude);
+  const ok =
+    job.address?.latitude != null && job.address?.longitude != null &&
+    Number.isFinite(lat) && Number.isFinite(lng) &&
+    Math.abs(lat) <= 90 && Math.abs(lng) <= 180 && !(lat === 0 && lng === 0);
+  return ok ? { lat, lng } : { lat: null, lng: null };
 }
 
 export function isCanceled(job: HcpJob): boolean {
@@ -173,6 +188,7 @@ export function jobToAppointmentRows(job: HcpJob): { rows: AppointmentRow[]; ski
   // Keep just the 5-digit zip so "72201-1234" and "72201" count as the same place.
   const zip = /^\s*(\d{5})/.exec(job.address?.zip ?? "")?.[1] ?? null;
   const status = job.work_status ?? "scheduled";
+  const { lat, lng } = jobPoint(job);
   return {
     rows: employeeIds.map((hcpEmployeeId) => ({
       hcpJobId: job.id,
@@ -181,6 +197,8 @@ export function jobToAppointmentRows(job: HcpJob): { rows: AppointmentRow[]; ski
       endTime: end,
       status,
       zip,
+      lat,
+      lng,
     })),
     skip: null,
   };
@@ -332,6 +350,8 @@ async function applyJob(
         endTime: row.endTime,
         status: row.status,
         zip: row.zip,
+        lat: row.lat,
+        lng: row.lng,
         kind: "job",
         label: null,
       };
@@ -1077,7 +1097,7 @@ export async function syncEventsWindow(
       const technicianId = idByHcp.get(row.hcpEmployeeId);
       if (write && technicianId) {
         keepByKey.get(row.hcpEventKey)!.push(technicianId);
-        const data = { startTime: row.startTime, endTime: row.endTime, status: "event", zip: null, kind: "event", label: row.label };
+        const data = { startTime: row.startTime, endTime: row.endTime, status: "event", zip: null, lat: null, lng: null, kind: "event", label: row.label };
         await deps.db.appointment.upsert({
           where: { hcpJobId_technicianId: { hcpJobId: row.hcpEventKey, technicianId } },
           update: data,

@@ -3,20 +3,23 @@ import { prisma } from "@/lib/prisma";
 import {
   SELECTABLE_DAYS_AHEAD,
   bestFit,
+  calendarDayBounds,
   generateDayAvailability,
   generateDispatchAvailability,
   selectableRange,
 } from "@/lib/availability";
 import { ZIP_CENTROIDS } from "@/data/ar-zip-centroids";
 import { makeProximity } from "@/lib/zip-distance";
+import { fitFor, readCustomerLocation } from "@/lib/customer-location";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const proximity = makeProximity(ZIP_CENTROIDS);
 
-// GET ?technicianId=...&zip=72201               -> the default view: today, tomorrow, days 3-7
-// GET ?technicianId=...&zip=72201&date=YYYY-MM-DD -> one specific day, on request
-// `zip` is the customer's zip. With it, every open gap is scored by how near the calls on
-// either side are, and the response includes the best fit. Without it, gaps are just "open".
+// GET ?technicianId=...&lat=34.74&lng=-92.28&zip=72201               -> the default view: today, tomorrow, days 3-7
+// GET ?technicianId=...&lat=34.74&lng=-92.28&zip=72201&date=YYYY-MM-DD -> one specific day, on request
+// lat/lng are the customer's address (from /api/geocode); zip alone also works. With a location,
+// every open gap is scored by how far it pulls the technician off his route for that day (see
+// lib/availability.ts), and the response includes the best fit. Without one, gaps are just "open".
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const technicianId = searchParams.get("technicianId");
@@ -24,11 +27,9 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "technicianId is required" }, { status: 400 });
   }
 
-  const zip = searchParams.get("zip");
-  if (zip !== null && !/^\d{5}$/.test(zip)) {
-    return NextResponse.json({ error: "zip must be a 5-digit zip code" }, { status: 400 });
-  }
-  const fit = zip ? { customerZip: zip, proximity } : undefined;
+  const location = readCustomerLocation(searchParams, false);
+  if (!location.ok) return NextResponse.json({ error: location.error }, { status: 400 });
+  const fit = fitFor(location, proximity);
 
   const now = new Date();
   const date = searchParams.get("date");
@@ -50,20 +51,26 @@ export async function GET(request: NextRequest) {
   }
 
   const horizonEnd = new Date(now.getTime() + (SELECTABLE_DAYS_AHEAD + 1) * DAY_MS);
+  // From midnight today, not from now: a job he already finished this morning still tells us
+  // where he is, which the route scoring needs.
+  const startOfToday = calendarDayBounds(selectableRange(now).min).start;
   const appointments = await prisma.appointment.findMany({
     where: {
       technicianId,
       status: { not: "cancelled" },
       startTime: { lt: horizonEnd },
-      endTime: { gt: now },
+      endTime: { gt: startOfToday },
     },
-    select: { startTime: true, endTime: true, zip: true, kind: true, label: true },
+    select: { startTime: true, endTime: true, zip: true, lat: true, lng: true, kind: true, label: true },
   });
 
-  const busy = appointments.map((a: { startTime: Date; endTime: Date; zip: string | null; kind: string; label: string | null }) => ({
+  type Row = { startTime: Date; endTime: Date; zip: string | null; lat?: number | null; lng?: number | null; kind: string; label: string | null };
+  const busy = appointments.map((a: Row) => ({
     start: a.startTime,
     end: a.endTime,
     zip: a.zip,
+    lat: a.lat ?? null,
+    lng: a.lng ?? null,
     kind: a.kind === "event" ? ("event" as const) : ("job" as const),
     label: a.label,
   }));

@@ -95,6 +95,10 @@ function fakeHcp(employees: HcpEmployee[], jobs: HcpJob[], opts: { ignoreFilter?
   eq("no employees -> skip", jobToAppointmentRows(J(1, [])).skip, "no-employees");
   eq("no address -> zip null", jobToAppointmentRows({ ...J(1, ["Drayton"]), address: undefined }).rows[0].zip, null);
   eq("zip+4 from HCP is stored as 5 digits", jobToAppointmentRows({ ...J(1, ["Drayton"]), address: { zip: "72201-1234" } }).rows[0].zip, "72201");
+  eq("map point from HCP (strings) is stored as numbers", (({ lat, lng }) => [lat, lng])(jobToAppointmentRows({ ...J(1, ["Drayton"]), address: { zip: "72201", latitude: "34.7465", longitude: "-92.2896" } }).rows[0]), [34.7465, -92.2896]);
+  eq("map point given as numbers works too", jobToAppointmentRows({ ...J(1, ["Drayton"]), address: { zip: "72201", latitude: 34.5, longitude: -92.1 } }).rows[0].lat, 34.5);
+  eq("no map point -> nulls (the zip is used instead)", (({ lat, lng }) => [lat, lng])(jobToAppointmentRows({ ...J(1, ["Drayton"]), address: { zip: "72201" } }).rows[0]), [null, null]);
+  eq("junk or 0,0 map point -> nulls", [jobToAppointmentRows({ ...J(1, ["Drayton"]), address: { latitude: "abc", longitude: "-92" } }).rows[0].lat, jobToAppointmentRows({ ...J(1, ["Drayton"]), address: { latitude: "0", longitude: "0" } }).rows[0].lat, jobToAppointmentRows({ ...J(1, ["Drayton"]), address: { latitude: "", longitude: "" } }).rows[0].lat], [null, null, null]);
   eq("zip with stray spaces is cleaned", jobToAppointmentRows({ ...J(1, ["Drayton"]), address: { zip: "  72204 " } }).rows[0].zip, "72204");
   eq("non-numeric / short zip is stored as null, not junk", [jobToAppointmentRows({ ...J(1, ["Drayton"]), address: { zip: "N/A" } }).rows[0].zip, jobToAppointmentRows({ ...J(1, ["Drayton"]), address: { zip: "7220" } }).rows[0].zip, jobToAppointmentRows({ ...J(1, ["Drayton"]), address: { zip: "" } }).rows[0].zip], [null, null, null]);
   eq("role field tech -> active", employeeToTechnician(E("x", "A", "B", "Field Tech")).active, true);
