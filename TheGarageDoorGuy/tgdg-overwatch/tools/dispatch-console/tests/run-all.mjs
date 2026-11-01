@@ -18,6 +18,7 @@ const TWO = ["UTC", "Asia/Tokyo"];
 const suites = [
   ["unit", "availability.test.mts", THREE],
   ["unit", "schedule-gaps-and-stacking.test.mts", ALL],
+  ["unit", "geocode.test.mts"],
   ["unit", "hcp-sync-jobs.test.mts"],
   ["unit", "webhook-signature-and-hcp-client.test.mts"],
   ["unit", "classification-and-admin-session.test.mts"],

@@ -10,7 +10,39 @@ const CALL_TYPES: CallType[] = ["residential", "commercial"];
 const CALL_TYPE_LABEL: Record<CallType, string> = { residential: "Residential", commercial: "Commercial" };
 
 type Slot = { start: string; end: string };
-type FitKind = "between-two" | "next-to-one" | "open";
+type FitKind = "between-two" | "next-to-one" | "open-day" | "open";
+type RouteKind = "between" | "before-first" | "after-last" | "open-day" | "unknown";
+/** Where a slot sits in the tech's day and how many extra drive minutes it costs (see lib/availability.ts). */
+type Route = { kind: RouteKind; minutes: number | null; fromZip: string | null; toZip: string | null };
+/** The customer's location, from the address lookup (or just a zip). */
+type Place = { label: string; lat: number | null; lng: number | null; zip: string | null; precision: "address" | "zip" };
+
+/** Good fits: on his route, at most 10 extra minutes. */
+const isGoodFit = (kind: FitKind) => kind === "between-two" || kind === "next-to-one";
+
+/** A bare zip needs no lookup. */
+const BARE_ZIP = /^\s*(\d{5})(-\d{4})?\s*$/;
+
+/** lat/lng/zip for the API, in that order. A zip-only place sends just the zip. */
+function locationQuery(place: Place): string {
+  const parts: string[] = [];
+  if (place.lat !== null && place.lng !== null) parts.push(`lat=${place.lat}`, `lng=${place.lng}`);
+  if (place.zip) parts.push(`zip=${encodeURIComponent(place.zip)}`);
+  return parts.join("&");
+}
+
+/** Short name for the customer's location in sentences ("near 72201"). */
+function placeShort(place: Place | null): string {
+  if (!place) return "the customer";
+  if (place.precision === "zip" || !place.label) return place.zip ?? "the customer";
+  return place.label.split(",")[0];
+}
+
+/** The customer's location for headers and the confirmation. */
+function placeLine(place: Place | null): string {
+  if (!place) return "";
+  return place.precision === "zip" ? `Zip ${place.zip}` : place.label;
+}
 type BlockKind = "job" | "event";
 type Neighbor = {
   kind?: BlockKind;
@@ -28,6 +60,7 @@ type Gap = {
   next: Neighbor | null;
   fit: FitKind;
   fitMinutes: number | null;
+  route?: Route | null;
   slots: Slot[];
 };
 type Booked = { start: string; end: string; zip: string | null; kind?: BlockKind; label?: string | null };
@@ -50,6 +83,7 @@ type BestFit = {
   prevZip: string | null;
   nextZip: string | null;
   minutes: number | null;
+  route?: Route | null;
 };
 type Soonest = { date: string; dayLabel: "Today" | "Tomorrow" | null; start: string };
 type Technician = { id: string; name: string; bestFit?: BestFit | null; soonest?: Soonest | null };
@@ -239,6 +273,38 @@ function fitBadge(kind: FitKind) {
   return kind === "between-two" ? "Between two nearby calls" : "Next to a nearby call";
 }
 
+/** "+4 min", "0 min" */
+function plusMin(m: number | null | undefined) {
+  return `+${m ?? 0} min`;
+}
+
+/**
+ * One line on WHY this opening is (or isn't) a good fit for this customer, in route terms.
+ * Null when the server didn't send route details (then the older zip wording is used).
+ */
+function routeText(route: Route | null | undefined, fit: FitKind): string | null {
+  if (!route) return null;
+  const call = (zip: string | null) => (zip ? `${zip} call` : "call");
+  if (route.kind === "open-day") return "Open day: this would be his first call";
+  if (route.minutes === null) return null;
+  if (!isGoodFit(fit)) return `Off his route: ${plusMin(route.minutes)} of driving`;
+  if (route.kind === "between") return `On his way between his ${call(route.fromZip)} and ${call(route.toZip)} (${plusMin(route.minutes)})`;
+  if (route.kind === "before-first") return `Right before his first ${call(route.toZip)}, ${route.minutes} min away`;
+  if (route.kind === "after-last") return `Right after his ${call(route.fromZip)}, ${route.minutes} min away`;
+  return null;
+}
+
+/** The badge on a gap card. */
+function gapBadge(gap: Gap): { text: string; tone: "good" | "open-day" | "far" } | null {
+  if (gap.fit === "open-day") return { text: "Open day \u00b7 first call", tone: "open-day" };
+  if (isGoodFit(gap.fit)) {
+    if (!gap.route) return { text: fitBadge(gap.fit), tone: "good" };
+    return { text: `On his route \u00b7 ${plusMin(gap.route.minutes)}`, tone: "good" };
+  }
+  if (gap.route && gap.route.minutes !== null) return { text: `Off his route \u00b7 ${plusMin(gap.route.minutes)}`, tone: "far" };
+  return null;
+}
+
 /** The width of an element in pixels, kept current. Stays 0 when it cannot be measured, and callers then just show everything. */
 function useMeasuredWidth() {
   const ref = useRef<HTMLDivElement | null>(null);
@@ -286,7 +352,7 @@ function Timeline({ view, timeZone }: { view: DayView; timeZone: string }) {
         className="relative h-7 overflow-hidden rounded border border-brand-black/15 bg-white"
       >
         {view.gaps
-          .filter((g) => g.fit !== "open")
+          .filter((g) => isGoodFit(g.fit))
           .map((g, i) => (
             <div
               key={`fit-${i}`}
@@ -381,34 +447,56 @@ function DayBlock({
         const first = gap.slots[0];
         const last = gap.slots[gap.slots.length - 1];
         const line = neighborLine(gap);
+        const why = routeText(gap.route, gap.fit);
+        const badge = gapBadge(gap);
+        const good = isGoodFit(gap.fit);
+        // With route details, highlight the start time the server suggests (flush against the job he is
+        // closer to); without them, the start times flush against any nearby call (the older rule).
+        const suggestedEdge =
+          gap.route?.kind === "before-first" ||
+          (gap.route?.kind === "between" && gap.next?.minutes != null && gap.prev?.minutes != null && gap.next.minutes < gap.prev.minutes)
+            ? last
+            : first;
         return (
           <div
             key={gi}
             data-kind="gap"
+            data-fit={gap.fit}
             className={`flex flex-col gap-2 rounded-md border-2 bg-white p-3 ${
-              gap.fit === "open" ? "border-brand-black/10" : "border-brand-orange"
+              good ? "border-brand-orange" : gap.fit === "open-day" ? "border-sky-700/40" : "border-brand-black/10"
             }`}
           >
             <div className="flex flex-wrap items-center gap-2">
               <p className="text-xs font-black uppercase tracking-wide text-brand-black">
                 Open {fmtTime(gap.start, timeZone)} &ndash; {fmtTime(gap.end, timeZone)}
               </p>
-              {gap.fit !== "open" && (
-                <span className="rounded-full bg-brand-orange px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-brand-black">
-                  {fitBadge(gap.fit)}
+              {badge && (
+                <span
+                  data-kind="gap-badge"
+                  className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${
+                    badge.tone === "good"
+                      ? "bg-brand-orange text-brand-black"
+                      : badge.tone === "open-day"
+                        ? "bg-sky-800 text-white"
+                        : "bg-brand-black/10 text-brand-gray"
+                  }`}
+                >
+                  {badge.text}
                 </span>
               )}
             </div>
+            {why && <p data-kind="route-why" className={`text-xs font-semibold ${good ? "text-brand-orange-dark" : "text-brand-gray"}`}>{why}</p>}
             {line && <p className="text-xs text-brand-gray">{line}</p>}
             <div className="flex flex-wrap gap-2">
               {gap.slots.map((s, i) => {
-                const stacks =
-                  gap.fit !== "open" && ((gap.prev?.near && s === first) || (gap.next?.near && s === last));
+                const stacks = gap.route
+                  ? good && s === suggestedEdge
+                  : good && ((gap.prev?.near && s === first) || (gap.next?.near && s === last));
                 return (
                   <button
                     key={i}
                     onClick={() => onPick(s)}
-                    title={stacks ? "Fits right against a nearby call" : undefined}
+                    title={stacks ? (gap.route ? "Best start time for his route" : "Fits right against a nearby call") : undefined}
                     className={`rounded-md border-2 px-3 py-2 text-sm font-semibold text-brand-black hover:border-brand-orange ${
                       stacks ? "border-brand-orange bg-brand-orange/10" : "border-brand-black/10 bg-white"
                     }`}
@@ -426,8 +514,14 @@ function DayBlock({
 }
 
 export default function DispatchConsole() {
-  const [step, setStep] = useState<"zip" | "type" | "tech" | "times" | "confirmed">("zip");
-  const [zip, setZip] = useState("");
+  const [step, setStep] = useState<"address" | "type" | "tech" | "times" | "confirmed">("address");
+  // What the dispatcher typed, and where it was found on the map.
+  const [address, setAddress] = useState("");
+  const [place, setPlace] = useState<Place | null>(null);
+  const [lookupError, setLookupError] = useState<string | null>(null);
+  const [lookingUp, setLookingUp] = useState(false);
+  const zip = place?.zip ?? "";
+  const near = placeShort(place);
   const [callType, setCallType] = useState<CallType | null>(null);
   const [listTimeZone, setListTimeZone] = useState<string | undefined>(undefined);
   const [typeError, setTypeError] = useState<string | null>(null);
@@ -445,10 +539,36 @@ export default function DispatchConsole() {
   const [dayError, setDayError] = useState<string | null>(null);
   const [dayLoading, setDayLoading] = useState(false);
 
-  function handleZipSubmit(e: React.FormEvent) {
+  // Find the address on the map once, then move on. A bare zip skips the lookup (works like before).
+  async function handleAddressSubmit(e: React.FormEvent) {
     e.preventDefault();
     setTypeError(null);
-    setStep("type");
+    setLookupError(null);
+    const bare = BARE_ZIP.exec(address);
+    if (bare) {
+      setPlace({ label: `Zip ${bare[1]}`, lat: null, lng: null, zip: bare[1], precision: "zip" });
+      setStep("type");
+      return;
+    }
+    if (!address.trim()) {
+      setLookupError("Type the customer's address.");
+      return;
+    }
+    setLookingUp(true);
+    try {
+      const res = await fetch(`/api/geocode?address=${encodeURIComponent(address.trim())}`);
+      const data = await res.json();
+      if (!res.ok || !data.place) {
+        setLookupError(data.error ?? "Couldn't find that address.");
+        return;
+      }
+      setPlace(data.place as Place);
+      setStep("type");
+    } catch {
+      setLookupError("Could not reach the server.");
+    } finally {
+      setLookingUp(false);
+    }
   }
 
   async function handleTypeSelect(type: CallType) {
@@ -458,7 +578,8 @@ export default function DispatchConsole() {
     setTechnicianName("");
     setLoading(true);
     try {
-      const res = await fetch(`/api/offered-technicians?zip=${encodeURIComponent(zip)}&type=${type}`);
+      if (!place) return;
+      const res = await fetch(`/api/offered-technicians?${locationQuery(place)}&type=${type}`);
       const data = await res.json();
       if (!res.ok) {
         setTypeError(data.error ?? "Could not look up technicians.");
@@ -475,10 +596,10 @@ export default function DispatchConsole() {
     }
   }
 
-  // The breadcrumb under the page title: zip, then call type, then technician.
+  // The breadcrumb under the page title: location, then call type, then technician.
   function headerLine() {
     const parts: string[] = [];
-    if (step !== "zip") parts.push(`Zip ${zip}`);
+    if (step !== "address") parts.push(placeLine(place));
     if (callType && (step === "tech" || step === "times" || step === "confirmed")) {
       parts.push(CALL_TYPE_LABEL[callType]);
     }
@@ -493,7 +614,7 @@ export default function DispatchConsole() {
     setDayResult(null);
     setDayError(null);
     setLoading(true);
-    const res = await fetch(`/api/availability?technicianId=${tech.id}&zip=${encodeURIComponent(zip)}`);
+    const res = await fetch(`/api/availability?technicianId=${tech.id}${place ? `&${locationQuery(place)}` : ""}`);
     const data = await res.json();
     setAvailability(data);
     setStep("times");
@@ -507,8 +628,10 @@ export default function DispatchConsole() {
   }
 
   function reset() {
-    setStep("zip");
-    setZip("");
+    setStep("address");
+    setAddress("");
+    setPlace(null);
+    setLookupError(null);
     setTechnicians([]);
     setSuggestedTechnicianId(null);
     setTechnicianId(null);
@@ -529,7 +652,7 @@ export default function DispatchConsole() {
     setDayLoading(true);
     try {
       const res = await fetch(
-        `/api/availability?technicianId=${encodeURIComponent(technicianId)}&zip=${encodeURIComponent(zip)}&date=${encodeURIComponent(date)}`
+        `/api/availability?technicianId=${encodeURIComponent(technicianId)}${place ? `&${locationQuery(place)}` : ""}&date=${encodeURIComponent(date)}`
       );
       const data = await res.json();
       if (!res.ok) setDayError(data.error ?? "Could not load that day.");
@@ -556,7 +679,7 @@ export default function DispatchConsole() {
           <h1 className="mt-2 text-2xl font-black uppercase leading-tight text-white">
             Dispatch console
           </h1>
-          {step !== "zip" && (
+          {step !== "address" && (
             <p className="mt-1 text-sm text-white/70">{headerLine()}</p>
           )}
           <FreshnessBadge />
@@ -565,27 +688,34 @@ export default function DispatchConsole() {
       </div>
 
       <div className="mx-auto w-full max-w-lg flex-1 px-6 py-8">
-        {step === "zip" && (
-          <form onSubmit={handleZipSubmit} className="flex flex-col gap-4">
-            <label className="text-xs font-bold uppercase tracking-wide text-brand-gray">
-              Customer zip code
+        {step === "address" && (
+          <form onSubmit={handleAddressSubmit} className="flex flex-col gap-4">
+            <label htmlFor="customer-address" className="text-xs font-bold uppercase tracking-wide text-brand-gray">
+              Customer address
             </label>
             <input
+              id="customer-address"
               className="rounded-md border-2 border-brand-black/10 bg-white px-4 py-3 text-lg font-semibold text-brand-black outline-none focus:border-brand-orange"
-              value={zip}
-              onChange={(e) => setZip(e.target.value.replace(/\D/g, "").slice(0, 5))}
-              placeholder="72201"
-              inputMode="numeric"
-              pattern="[0-9]{5}"
-              title="Enter a 5-digit zip code"
+              value={address}
+              onChange={(e) => {
+                setAddress(e.target.value.slice(0, 200));
+                setLookupError(null);
+              }}
+              placeholder="123 Main St, Little Rock, AR 72201"
+              autoComplete="off"
               required
               autoFocus
             />
+            <p className="text-xs text-brand-gray">
+              Street, city and zip work best. A zip code by itself still works.
+            </p>
+            {lookupError && <p className="text-sm font-semibold text-brand-orange-dark">{lookupError}</p>}
             <button
               type="submit"
-              className="rounded-md bg-brand-orange px-4 py-3 text-sm font-bold uppercase tracking-wide text-brand-black transition hover:bg-brand-orange-dark"
+              disabled={lookingUp}
+              className="rounded-md bg-brand-orange px-4 py-3 text-sm font-bold uppercase tracking-wide text-brand-black transition hover:bg-brand-orange-dark disabled:opacity-50"
             >
-              Continue
+              {lookingUp ? "Finding address\u2026" : "Continue"}
             </button>
           </form>
         )}
@@ -593,8 +723,13 @@ export default function DispatchConsole() {
         {step === "type" && (
           <div className="flex flex-col gap-4">
             <p className="text-xs font-bold uppercase tracking-widest text-brand-orange">
-              Zip {zip}
+              {placeLine(place)}
             </p>
+            {place && place.precision === "zip" && BARE_ZIP.exec(address) === null && (
+              <p data-kind="zip-fallback" className="rounded-md border border-brand-orange/30 bg-brand-orange/10 px-3 py-2 text-xs font-semibold text-brand-orange-dark">
+                Couldn&apos;t pin down the street address, so this uses the zip code only. Distances will be rougher.
+              </p>
+            )}
             <h2 className="text-xl font-black uppercase text-brand-black">What kind of call?</h2>
             <div className="grid grid-cols-2 gap-3">
               {CALL_TYPES.map((type) => (
@@ -611,10 +746,10 @@ export default function DispatchConsole() {
             {loading && <p className="text-sm text-brand-gray">Checking&hellip;</p>}
             {typeError && <p className="text-sm font-semibold text-brand-orange-dark">{typeError}</p>}
             <button
-              onClick={() => setStep("zip")}
+              onClick={() => setStep("address")}
               className="mt-2 self-start text-xs font-bold uppercase tracking-wide text-brand-gray hover:text-brand-black"
             >
-              &larr; Back to zip
+              &larr; Back to address
             </button>
           </div>
         )}
@@ -622,7 +757,7 @@ export default function DispatchConsole() {
         {step === "tech" && (
           <div className="flex flex-col gap-4">
             <p className="text-xs font-bold uppercase tracking-widest text-brand-orange">
-              {callType ? CALL_TYPE_LABEL[callType] : ""} &middot; Zip {zip}
+              {callType ? CALL_TYPE_LABEL[callType] : ""} &middot; {placeLine(place)}
             </p>
             <h2 className="text-xl font-black uppercase text-brand-black">
               Pick a technician
@@ -635,8 +770,10 @@ export default function DispatchConsole() {
             <div className="flex flex-col divide-y divide-brand-black/10 border-t border-brand-black/10">
               {technicians.map((t) => {
                 const best = t.bestFit;
-                const stacks = best && best.kind !== "open";
-                const earlier = stacks && t.soonest && new Date(t.soonest.start) < new Date(best.slotStart);
+                const stacks = best && isGoodFit(best.kind);
+                const openDay = best && best.kind === "open-day";
+                const why = best ? routeText(best.route, best.kind) : null;
+                const earlier = (stacks || openDay) && t.soonest && best && new Date(t.soonest.start) < new Date(best.slotStart);
                 return (
                   <button
                     key={t.id}
@@ -648,16 +785,25 @@ export default function DispatchConsole() {
                       {best ? (
                         stacks ? (
                           <span className="text-xs font-semibold text-brand-orange-dark">
-                            {best.kind === "between-two"
-                              ? `Between two calls near ${zip}`
-                              : `Next to a call near ${zip}`}
+                            {why ??
+                              (best.kind === "between-two"
+                                ? `Between two calls near ${near}`
+                                : `Next to a call near ${near}`)}
                             : {whenText(best.dayLabel, best.date)}, open {fmtTime(best.start, listTimeZone ?? "")}{" "}
                             &ndash; {fmtTime(best.end, listTimeZone ?? "")}
                           </span>
-                        ) : (
-                          <span className="text-xs text-brand-gray">
-                            Soonest opening: {whenText(best.dayLabel, best.date)}{" "}
+                        ) : openDay ? (
+                          <span className="text-xs font-semibold text-sky-800">
+                            Open day, first call: {whenText(best.dayLabel, best.date)} from{" "}
                             {fmtTime(best.slotStart, listTimeZone ?? "")}
+                          </span>
+                        ) : (
+                          <span className="flex flex-col gap-0.5 text-xs text-brand-gray">
+                            {why && <span>{why}</span>}
+                            <span>
+                              Soonest opening: {whenText(best.dayLabel, best.date)}{" "}
+                              {fmtTime(best.slotStart, listTimeZone ?? "")}
+                            </span>
                           </span>
                         )
                       ) : (
@@ -696,15 +842,18 @@ export default function DispatchConsole() {
             {availability.bestFit && availability.bestFit.kind !== "open" ? (
               <section className="flex flex-col gap-2 rounded-md border-2 border-brand-orange bg-brand-orange/10 p-3">
                 <p className="text-xs font-black uppercase tracking-widest text-brand-orange-dark">
-                  Best fit for zip {zip}
+                  Best fit for {place?.precision === "zip" ? `zip ${zip}` : near}
                 </p>
                 <p className="text-sm font-semibold text-brand-black">
                   {whenText(availability.bestFit.dayLabel, availability.bestFit.date)}, open{" "}
                   {fmtTime(availability.bestFit.start, availability.timeZone)} &ndash;{" "}
                   {fmtTime(availability.bestFit.end, availability.timeZone)},{" "}
-                  {availability.bestFit.kind === "between-two"
-                    ? `between two calls near ${zip}`
-                    : `next to a call near ${zip}`}
+                  {routeText(availability.bestFit.route, availability.bestFit.kind)?.replace(/^./, (c) => c.toLowerCase()) ??
+                    (availability.bestFit.kind === "between-two"
+                      ? `between two calls near ${near}`
+                      : availability.bestFit.kind === "open-day"
+                        ? "open day: this would be his first call"
+                        : `next to a call near ${near}`)}
                 </p>
                 <button
                   onClick={() => {
@@ -722,7 +871,10 @@ export default function DispatchConsole() {
               </section>
             ) : availability.bestFit ? (
               <p className="text-xs text-brand-gray">
-                No calls near {zip} to stack with in the next 7 days. Soonest opening:{" "}
+                {availability.bestFit.route?.minutes != null
+                  ? `Every opening in the next 7 days is off his route (best is ${plusMin(availability.bestFit.route.minutes)} of driving). `
+                  : `No calls near ${near} to stack with in the next 7 days. `}
+                Soonest opening:{" "}
                 {whenText(availability.bestFit.dayLabel, availability.bestFit.date)}{" "}
                 {fmtTime(availability.bestFit.slotStart, availability.timeZone)}.
               </p>
@@ -742,7 +894,7 @@ export default function DispatchConsole() {
               </span>
               <span className="flex items-center gap-1">
                 <span className="inline-block h-3 w-5 rounded-sm bg-brand-orange/25 ring-1 ring-inset ring-brand-orange" />
-                Open near calls in {zip}
+                {place?.precision === "address" ? "Open on his route for this address" : `Open near calls in ${zip}`}
               </span>
               <span className="flex items-center gap-1">
                 <span
@@ -873,7 +1025,8 @@ export default function DispatchConsole() {
               {confirmed.label} with {technicianName}
             </h2>
             <p className="text-sm text-brand-gray">
-              {callType ? `${CALL_TYPE_LABEL[callType]} call` : "Call"} &middot; zip {zip}
+              {callType ? `${CALL_TYPE_LABEL[callType]} call` : "Call"} &middot;{" "}
+              {place?.precision === "address" ? place.label : `zip ${zip}`}
             </p>
             <p className="text-sm text-brand-gray">
               Quote the customer: <span className="font-bold text-brand-black">{confirmed.window}</span>

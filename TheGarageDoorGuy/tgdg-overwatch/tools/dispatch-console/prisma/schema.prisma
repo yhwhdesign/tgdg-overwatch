@@ -49,6 +49,11 @@ model Appointment {
   endTime       DateTime
   status        String
   zip           String?
+  // The job's map point from Housecall Pro (the customer's address, as HCP placed it on its map).
+  // Used only to measure drive time between calls when routing a new customer. Null for events
+  // and for jobs HCP has no point for (then the zip is used instead).
+  lat           Float?
+  lng           Float?
   // "job" or "event". Events are Housecall Pro calendar items that block a person's time
   // (an errand, time off, a meeting). For events hcpJobId holds "event:<id>".
   kind          String     @default("job")

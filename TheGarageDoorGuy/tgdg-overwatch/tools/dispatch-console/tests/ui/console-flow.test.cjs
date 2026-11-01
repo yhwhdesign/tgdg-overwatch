@@ -53,11 +53,13 @@ const check = (name, ok, detail = "") => { if (ok) passes++; else { failures++; 
   let statusCalls = 0;
   const FRESH = (over = {}) => ({ state: "ok", asOf: new Date(Date.now() - 4 * 60000).toISOString(), asOfText: "3:26 PM", ageMinutes: 4, staleAfterMinutes: 22, message: "Schedule as of 3:26 PM (4 min ago).", ...over });
   let statusHandler = () => ({ ok: true, status: 200, json: async () => FRESH() });
+  let geoHandler = () => ({ ok: false, status: 400, json: async () => ({ error: "not set" }) });
   let zipHandler, availHandler = (p) => (p.get("date") ? { ok: true, status: 200, json: async () => pickedDay } : { ok: true, status: 200, json: async () => AVAIL });
   globalThis.fetch = async (url) => {
     calls.push(String(url));
     const u = new URL(String(url), "http://localhost:3000");
     if (u.pathname === "/api/sync-status") { statusCalls++; return statusHandler(); }
+    if (u.pathname === "/api/geocode") return geoHandler(u.searchParams);
     if (u.pathname === "/api/offered-technicians") return zipHandler(u.searchParams);
     if (u.pathname === "/api/availability") return availHandler(u.searchParams);
     return { ok: false, status: 404, json: async () => ({}) };
@@ -81,22 +83,22 @@ const check = (name, ok, detail = "") => { if (ok) passes++; else { failures++; 
   await act(async () => { root.render(React.createElement(mod.exports.default)); });
   const q = (sel, scope = document) => [...scope.querySelectorAll(sel)];
 
-  // ================= 1. zip step =================
-  check("starts on the zip step", /Customer zip code/i.test(text()));
+  // ================= 1. address step (a bare zip still works and skips the lookup) =================
+  check("starts on the address step", /Customer address/i.test(text()));
   const zipInput = document.querySelector("input");
-  await typeInto(zipInput, "72a2-0 1x9");
-  check("zip field keeps digits only and the first five", zipInput.value === "72201", zipInput.value);
-  await typeInto(zipInput, "72201-1234"); check("pasting 72201-1234 gives 72201", zipInput.value === "72201", zipInput.value);
-  check("zip field is numeric with a 5-digit pattern", zipInput.getAttribute("inputmode") === "numeric" && zipInput.getAttribute("pattern") === "[0-9]{5}");
+  await typeInto(zipInput, "500 President Clinton Ave");
+  check("the field takes a full street address", zipInput.value === "500 President Clinton Ave", zipInput.value);
+  await typeInto(zipInput, "72201");
   const callsBeforeType = calls.length;
   await submit();
+  check("a bare zip needs no address lookup", !calls.some((c) => c.startsWith("/api/geocode")));
 
   // ================= 2. type step =================
   check("moves to the call-type step", /What kind of call\?/i.test(text()));
   check("shows exactly the two choices", !!buttonByText("Residential") && !!buttonByText("Commercial"));
   check("no technician lookup before choosing a type", calls.length === callsBeforeType);
-  await click(buttonByText("\u2190 Back to zip"));
-  check("back returns to zip, value kept", /Customer zip code/i.test(text()) && document.querySelector("input").value === "72201");
+  await click(buttonByText("\u2190 Back to address"));
+  check("back returns to the address step, value kept", /Customer address/i.test(text()) && document.querySelector("input").value === "72201");
   await submit();
 
   // ================= 3. technicians, with each one's best opening =================
@@ -218,7 +220,7 @@ const check = (name, ok, detail = "") => { if (ok) passes++; else { failures++; 
   check("...with no 2-hour-window reminder and no clickable times for a day with nothing open", !/Quote the customer a 2-hour arrival window/.test(todaySection.split("Tomorrow")[0]) && q('[data-kind="gap"]').length === 0);
   await typeInto(document.querySelector("input[type=date]"), "2026-10-20");
   check("a picked day blocked only by an event shows it too", text().includes("Event 8:00 AM \u2013 6:00 PM: Safety training") && text().includes("Nothing open on Tue, Oct 20."), text().slice(-300));
-  await click(buttonByText("\u2190 Change technician")); await click(buttonByText("\u2190 Back")); await click(buttonByText("\u2190 Back to zip"));
+  await click(buttonByText("\u2190 Change technician")); await click(buttonByText("\u2190 Back")); await click(buttonByText("\u2190 Back to address"));
 
   // ================= 6. when there is nothing to stack with =================
   availHandler = () => ({ ok: true, status: 200, json: async () => ({ ...AVAIL, bestFit: { kind: "open", date: "2026-10-05", dayLabel: "Today", start: T(0, 12), end: T(0, 18), slotStart: T(0, 12), prevZip: null, nextZip: null, minutes: null } }) });
@@ -313,12 +315,73 @@ const check = (name, ok, detail = "") => { if (ok) passes++; else { failures++; 
   statusHandler = () => ({ ok: true, status: 200, json: async () => FRESH() });
   await act(async () => { root3.render(React.createElement(mod.exports.default)); });
   await act(async () => { await new Promise((r2) => setTimeout(r2, 5)); });
-  check("S11 on the first screen (zip entry) the badge is already there", !!badge() && /Schedule as of 3:26 PM/.test(badge().textContent) && /Customer zip code/i.test(text()));
+  check("S11 on the first screen (zip entry) the badge is already there", !!badge() && /Schedule as of 3:26 PM/.test(badge().textContent) && /Customer address/i.test(text()));
   await act(async () => { root3.unmount(); });
   const root4 = createRoot(document.getElementById("root"));
   await act(async () => { root4.render(React.createElement(mod.exports.default)); });
 
   await act(async () => { root4.unmount(); });
+  // ================= 9. full street address: looked up once, then routed =================
+  const root5 = createRoot(document.getElementById("root"));
+  await act(async () => { root5.render(React.createElement(mod.exports.default)); });
+  const ADDR = { label: "500 PRESIDENT CLINTON AVE, LITTLE ROCK, AR, 72201", lat: 34.7466, lng: -92.2596, zip: "72201", precision: "address" };
+  geoHandler = (p) => p.get("address").includes("Nowhere")
+    ? { ok: false, status: 400, json: async () => ({ error: "Couldn't find that address. Check the spelling, or add the city and zip code." }) }
+    : { ok: true, status: 200, json: async () => ({ place: ADDR }) };
+  await typeInto(document.querySelector("input"), "1 Nowhere Lane"); await submit();
+  check("A1 an address that can't be found stays on the address step with a helpful message", /Customer address/i.test(text()) && text().includes("Couldn't find that address"), text().slice(0, 300));
+  await typeInto(document.querySelector("input"), "500 President Clinton Ave, Little Rock");
+  check("A1b typing again clears the message", !text().includes("Couldn't find that address"));
+  await submit();
+  check("A2 the address is looked up once, as typed", calls.filter((c) => c.startsWith("/api/geocode")).at(-1) === "/api/geocode?address=500%20President%20Clinton%20Ave%2C%20Little%20Rock");
+  check("A3 the matched address is shown on the call-type step", text().includes("500 PRESIDENT CLINTON AVE, LITTLE ROCK, AR, 72201") && /What kind of call\?/.test(text()));
+  const R = (kind, minutes, fromZip, toZip) => ({ kind, minutes, fromZip, toZip });
+  zipHandler = (p) => ({ ok: true, status: 200, json: async () => ({ zip: p.get("zip"), type: p.get("type"), timeZone: "America/Chicago", suggestedTechnicianId: "m", reason: null, technicians: [
+    { id: "m", name: "Mike OnTheWay", bestFit: { kind: "between-two", date: "2026-10-06", dayLabel: "Tomorrow", start: T(1, 9), end: T(1, 13), slotStart: T(1, 9), prevZip: "72032", nextZip: "72113", minutes: 4, route: R("between", 4, "72032", "72113") }, soonest: { date: "2026-10-06", dayLabel: "Tomorrow", start: T(1, 9) } },
+    { id: "d", name: "Dave FirstJob", bestFit: { kind: "next-to-one", date: "2026-10-06", dayLabel: "Tomorrow", start: T(1, 8), end: T(1, 9), slotStart: T(1, 8), prevZip: null, nextZip: "72019", minutes: 6, route: R("before-first", 6, null, "72019") }, soonest: { date: "2026-10-06", dayLabel: "Tomorrow", start: T(1, 8) } },
+    { id: "c", name: "Chris OpenDay", bestFit: { kind: "open-day", date: "2026-10-06", dayLabel: "Tomorrow", start: T(1, 8), end: T(1, 18), slotStart: T(1, 8), prevZip: null, nextZip: null, minutes: null, route: R("open-day", null, null, null) }, soonest: { date: "2026-10-06", dayLabel: "Tomorrow", start: T(1, 8) } },
+    { id: "t", name: "Tony FarAway", bestFit: { kind: "open", date: "2026-10-06", dayLabel: "Tomorrow", start: T(1, 15), end: T(1, 18), slotStart: T(1, 15), prevZip: "72023", nextZip: null, minutes: null, route: R("after-last", 22, "72023", null) }, soonest: { date: "2026-10-06", dayLabel: "Tomorrow", start: T(1, 15) } },
+  ] }) });
+  await click(buttonByText("Residential"));
+  check("A4 technicians are asked for with the map point AND the zip", calls.filter((c) => c.startsWith("/api/offered-technicians")).at(-1) === "/api/offered-technicians?lat=34.7466&lng=-92.2596&zip=72201&type=residential", calls.filter((c) => c.startsWith("/api/offered-technicians")).at(-1));
+  check("A5 on-route tech: between which calls and how many extra minutes", buttonByText("Mike OnTheWay").textContent.includes("On his way between his 72032 call and 72113 call (+4 min): Tomorrow, open 9:00 AM \u2013 1:00 PM"), buttonByText("Mike OnTheWay").textContent);
+  check("A6 before-first tech: drive to his first call", buttonByText("Dave FirstJob").textContent.includes("Right before his first 72019 call, 6 min away"), buttonByText("Dave FirstJob").textContent);
+  check("A7 open-day tech: the customer would be his first call", buttonByText("Chris OpenDay").textContent.includes("Open day, first call: Tomorrow from 8:00 AM"), buttonByText("Chris OpenDay").textContent);
+  check("A8 off-route tech: says how far off, plus the soonest opening", buttonByText("Tony FarAway").textContent.includes("Off his route: +22 min of driving") && buttonByText("Tony FarAway").textContent.includes("Soonest opening: Tomorrow 3:00 PM"), buttonByText("Tony FarAway").textContent);
+  check("A9 header shows the matched address", text().includes("500 PRESIDENT CLINTON AVE, LITTLE ROCK, AR, 72201 \u00b7 Residential"));
+
+  const ROUTE_AVAIL = { ...AVAIL,
+    tomorrow: { ...AVAIL.tomorrow, gaps: [
+      { ...AVAIL.tomorrow.gaps[0], route: R("between", 4, "72201", "72202"), fitMinutes: 4, prev: nb("72201", T(1, 9), true, false, 5), next: nb("72202", T(1, 13), true, false, 2) },
+      { ...AVAIL.tomorrow.gaps[1], fit: "open", fitMinutes: null, route: R("after-last", 22, "72202", null) },
+    ] },
+    later: { ...AVAIL.later, days: [{ date: "2026-10-07", ...emptyDay(2), gaps: [{ start: T(2, 8), end: T(2, 18), prev: null, next: null, fit: "open-day", fitMinutes: null, route: R("open-day", null, null, null), slots: [slot(2, 8)] }], slots: [slot(2, 8)] }, ...AVAIL.later.days.slice(1)] },
+    bestFit: { ...AVAIL.bestFit, minutes: 4, route: R("between", 4, "72201", "72202") } };
+  availHandler = () => ({ ok: true, status: 200, json: async () => ROUTE_AVAIL });
+  await click(buttonByText("Mike OnTheWay"));
+  check("A10 the schedule is asked for with the map point and zip", calls.at(-1) === "/api/availability?technicianId=m&lat=34.7466&lng=-92.2596&zip=72201", calls.at(-1));
+  check("A11 best-fit callout explains the route", text().includes("Best fit for 500 PRESIDENT CLINTON AVE") && text().includes("on his way between his 72201 call and 72202 call (+4 min)"), text().slice(0, 400));
+  const cards = q('[data-kind="gap"]');
+  const badgeOf = (g) => g.querySelector('[data-kind="gap-badge"]')?.textContent ?? "";
+  check("A12 on-route gap badge shows the extra minutes", cards.some((g) => badgeOf(g) === "On his route \u00b7 +4 min"), cards.map(badgeOf).join(" | "));
+  check("A13 off-route gap says how far off, without the orange border", cards.some((g) => badgeOf(g) === "Off his route \u00b7 +22 min" && !g.className.includes("border-brand-orange")), cards.map(badgeOf).join(" | "));
+  check("A14 an open day is labeled as his first call", cards.some((g) => badgeOf(g) === "Open day \u00b7 first call"));
+  const onRoute = cards.find((g) => badgeOf(g).startsWith("On his route"));
+  const ob = [...onRoute.querySelectorAll("button")];
+  check("A15 only the suggested start (next to the closer job, here the one after) is highlighted", ob.at(-1).className.includes("bg-brand-orange/10") && ob.slice(0, -1).every((b) => !b.className.includes("bg-brand-orange/10")), ob.map((b) => b.className.includes("bg-brand-orange/10")).join());
+  check("A16 the legend speaks in route terms for an address", text().includes("Open on his route for this address"));
+  check("A17 only on-route gaps are tinted on the bar (not open days, not off-route)", q('[data-kind="fit-gap"]').length === 1, String(q('[data-kind="fit-gap"]').length));
+  await click(buttonByText("Book "));
+  check("A18 confirmation names the full address", text().includes("Residential call \u00b7 500 PRESIDENT CLINTON AVE, LITTLE ROCK, AR, 72201"), text().slice(0, 400));
+  await click(buttonByText("New call"));
+  check("A19 New call clears the address", /Customer address/i.test(text()) && document.querySelector("input").value === "");
+
+  // zip fallback: the Census couldn't place the street, but the text had a zip
+  geoHandler = () => ({ ok: true, status: 200, json: async () => ({ place: { label: "Zip 72034", lat: null, lng: null, zip: "72034", precision: "zip" } }) });
+  await typeInto(document.querySelector("input"), "1 Back Road, Conway AR 72034"); await submit();
+  check("A20 zip-only fallback is flagged so the dispatcher knows distances are rougher", !!document.querySelector('[data-kind="zip-fallback"]') && text().includes("Zip 72034"));
+  await act(async () => { root5.unmount(); });
+
   console.log(`\n${passes} passed, ${failures} failed`);
   process.exit(failures ? 1 : 0);
 })().catch((e) => { console.error("TEST CRASH:", e); process.exit(2); });
