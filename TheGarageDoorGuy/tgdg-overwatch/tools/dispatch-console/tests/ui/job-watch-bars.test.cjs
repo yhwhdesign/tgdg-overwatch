@@ -52,7 +52,9 @@ const check = (name, ok, detail = "") => { if (ok) passes++; else { failures++; 
   check("A6 the +N more line counts the hidden bar", document.querySelector('[data-field="more"]') && /\+1 more/.test(document.querySelector('[data-field="more"]').textContent));
   check("A7 the status line says how many are on jobs", status() && /2 on jobs/.test(status().textContent) && status().dataset.tone === "ok", status() && status().textContent);
   const goLinks = [...document.querySelectorAll('[data-action="go"]')];
-  check("A8 Go to job / Go to estimate open Housecall Pro in a new tab, safely", goLinks.length === 3 && goLinks[0].textContent === "Go to job" && goLinks[1].textContent === "Go to estimate" && goLinks.every((a) => a.target === "_blank" && /noopener/.test(a.rel) && a.href.startsWith("https://pro.housecallpro.com/")), goLinks.map((a) => a.textContent + a.href).join(" | "));
+  // The Housecall Pro phone app shows "page not found" for web links, so there are no Go to job / estimate links:
+  // dispatchers look the number up in HCP (it is in every title).
+  check("A8 no Go to job / Go to estimate links, and no links to Housecall Pro at all", goLinks.length === 0 && document.querySelectorAll('a[href*="housecallpro"]').length === 0, goLinks.map((a) => a.textContent).join(" | "));
   check("A9 red bars are alerts, green bars are status messages (for screen readers)", bars()[0].getAttribute("role") === "alert" && bars()[2].getAttribute("role") === "status");
   check("A10 the bars stick to the top of the page", document.querySelector('[data-job-watch="bars"]').className.includes("sticky"));
 

@@ -43,7 +43,8 @@ const byId = (id: string) => items.find((i) => i.id === id)!;
 // ===== A. turning findings into messages
 eq("A1 four items, one of each kind", items.map((i) => i.kind).sort(), [...ALL].sort());
 let m = byId("job_1@120");
-eq("A2 over-time job: who, what, how long, the normal limit; high priority; links to the job", [m.message.title, m.message.body, m.message.priority, m.message.url], ["Job running long", 'Alex Tech and Blake Tech have been on "Garage Door Install #4521" for 2h 10m (normal is 2h). Started 7:50 AM.', 4, "https://pro.housecallpro.com/app/jobs/job_1"]);
+eq("A2 over-time job: who, what (with the job number), how long, the normal limit; high priority; no link (the HCP app can't open web links)", [m.message.title, m.message.body, m.message.priority, m.message.url], ["Job running long", 'Alex Tech and Blake Tech have been on "Garage Door Install #4521" for 2h 10m (normal is 2h). Started 7:50 AM.', 4, null]);
+eq("A2b no message carries a link", itemsFromWatch(watch).every((i) => i.message.url === null), true);
 eq("A3 its event time is when it crossed the limit", m.eventAt, Date.parse(ago(130)) + 120 * 60_000);
 m = byId("csr_2@3d");
 eq("A4 waiting estimate", [m.message.title, m.message.body], ["Estimate waiting", 'Estimate #8802 ($990) has had no answer for 3 days. Created Oct 16 (Blake Tech). No option is approved or declined yet.']);
@@ -51,7 +52,7 @@ eq("A5 its event time is when it became due (created + 3 days)", m.eventAt, Date
 m = byId("csr_1#99");
 eq("A6 finished estimate: includes the options and amounts", [m.message.title, m.message.body], ["Estimate finished", 'Alex Tech finished "Estimate #8801" at 9:55 AM after 35m.\nSteel Back: $1,500\nVinyl Back: $1,800']);
 m = byId("job_2#88");
-eq("A7 finished JOB: the notes are NEVER included", [m.message.title, m.message.body.includes("4471"), m.message.body.includes("Zelda"), m.message.body.endsWith("Open the job to read the notes.")], ["Job finished", false, false, true]);
+eq("A7 finished JOB: the notes are NEVER included", [m.message.title, m.message.body.includes("4471"), m.message.body.includes("Zelda"), m.message.body.endsWith("Look it up in Housecall Pro to read the notes.")], ["Job finished", false, false, true]);
 check("A8 no message holds a customer name, address or phone", !JSON.stringify(items).includes("Quimby") && !JSON.stringify(items).includes("4471"));
 eq("A9 junk entries are skipped, never crash", itemsFromWatch({ alerts: [null, 5, {}, { id: "x" }, { id: "y", startedAt: "junk" }], completed: ["s", {}, { id: "z", completedAt: "nope" }] } as never).length, 0);
 eq("A10 an unsafe or off-site link is dropped, the message still goes", itemsFromWatch({ alerts: [{ ...watch.alerts[1], url: "https://evil.com/x" }, { ...watch.alerts[0], url: "javascript:alert(1)" }] }).map((i) => i.message.url), [null, null]);

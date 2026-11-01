@@ -52,7 +52,7 @@ const check = (name, ok, detail = "") => { if (ok) passes++; else { failures++; 
   check("A10 text in a note is shown as text: no tag from a note becomes part of the page", !w.querySelector("img") && !w.querySelector("b") && /<b>order<\/b>/.test(w.querySelector('[data-field="notes"]').textContent));
   check("A11 'No notes left' and 'Not finished' chips", !!card("job_noNotes").querySelector('[data-reason="no-notes"]') && !!card("job_unfinished").querySelector('[data-reason="unfinished"]') && /Scheduled Sun 9:00 AM, never started/.test(text(card("job_unfinished"))));
   const go = w.querySelector('[data-action="go"]');
-  check("A12 Go to job opens Housecall Pro in a new tab, safely", go && go.href === "https://pro.housecallpro.com/app/jobs/job_words" && go.target === "_blank" && /noopener/.test(go.rel));
+  check("A12 no Go to job link (the HCP phone app can't open it)", !go && !w.querySelector('a[href*="housecallpro"]'));
   await click(btn('[data-filter="all"]'));
   check("A13 Everything shows all four, the clean job last and not flagged", cards().length === 4 && cards()[3].dataset.item === "job_clean" && !cards()[3].querySelector("[data-reason]") && cards()[3].dataset.needsLook === "false");
   check("A14 the how-it-works note lists the words and says marks are saved in this browser", /How jobs are flagged/.test(text()) && /part, parts, order/.test(text(document.querySelector("details"))) && /this browser only/.test(text(document.querySelector("details"))));

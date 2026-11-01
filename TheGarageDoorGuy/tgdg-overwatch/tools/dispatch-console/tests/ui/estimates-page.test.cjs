@@ -34,7 +34,7 @@ const check = (name, ok, detail = "") => { if (ok) passes++; else { failures++; 
   check("E2 ready: the title, the period and the list's tags", !!document.querySelector('[data-state="ready"]') && /Estimates/.test(text()) && /2026-01-01 to 2026-10-19/.test(text()) && /"Jasen Est" \+ "\*" list/.test(text()), text().slice(0, 200));
   const cards = () => [...document.querySelectorAll("[data-estimate]")];
   check("E3 three cards, each with number, date, tech, options and amount", cards().length === 3 && /Estimate #8801/.test(cards()[0].textContent) && /Oct 16/.test(cards()[0].textContent) && /Alex Tech/.test(cards()[0].textContent) && /1 option(?!s)/.test(cards()[0].textContent) && /\$1,250/.test(cards()[0].textContent), text());
-  check("E4 a Go to estimate button on a card with a link, opening a new tab safely", (() => { const a = cards()[0].querySelector("a"); return !!a && a.textContent === "Go to estimate" && a.href === "https://pro.housecallpro.com/app/estimates/csr_1" && a.target === "_blank" && /noopener/.test(a.rel); })());
+  check("E4 no Go to estimate link (the HCP phone app can't open it); the estimate number is shown to look it up", !cards()[0].querySelector("a") && /Estimate #\d+/.test(cards()[0].textContent), cards()[0].textContent);
   check("E5 no button where there is no link", !cards()[1].querySelector("a"));
   check("E6 an enormous amount is marked to check, and shown in dollars not cents", /\$200,000/.test(cards()[1].textContent) && /check this amount/.test(cards()[1].textContent) && !/check this amount/.test(cards()[0].textContent));
   check("E7 the outcome badges read Waiting / Won / Declined", /Waiting/.test(cards()[0].textContent) && /Won/.test(cards()[1].textContent) && /Declined/.test(cards()[2].textContent));

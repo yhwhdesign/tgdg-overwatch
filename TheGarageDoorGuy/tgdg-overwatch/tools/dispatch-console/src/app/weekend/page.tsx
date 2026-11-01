@@ -74,11 +74,6 @@ function Card({ item, words, reviewed, onToggle, notesHidden }: { item: RecapIte
       )}
       {notesHidden ? <p data-field="notes-off" className="mt-2 text-xs italic text-brand-gray">Notes are turned off.</p> : <Notes item={item} words={words} />}
       <div className="mt-3 flex gap-2">
-        {item.url && (
-          <a data-action="go" href={item.url} target="_blank" rel="noopener noreferrer" className="rounded border border-brand-black/40 px-3 py-1 text-xs font-bold uppercase tracking-wide text-brand-black hover:border-brand-orange hover:text-brand-orange">
-            Go to job
-          </a>
-        )}
         <button type="button" data-action="review" onClick={onToggle} className="rounded border border-brand-black/20 px-3 py-1 text-xs font-bold uppercase tracking-wide text-brand-gray hover:border-brand-orange hover:text-brand-orange">
           {reviewed ? "Undo reviewed" : "Mark reviewed"}
         </button>

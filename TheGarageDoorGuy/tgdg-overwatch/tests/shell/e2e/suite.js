@@ -122,26 +122,18 @@ const finish = async (code = 0) => { try { await session.defaultSession.cookies.
     await setWatch({ watching: 0, alerts: [] }); await wait(1500);
     check("JW24 the layout is back to normal at the end", views()[0].getBounds().y === baseY);
 
-    // ---------- 1b2. JOB WATCH: "Go to job" opens the ticket in the real browser ----------
+    // ---------- 1b2. JOB WATCH: no "Go to job" button (the Housecall Pro phone app can't open web links) ----------
     const JOBURL = "https://pro.housecallpro.com/app/jobs/job_222bc7db334e4898992bffe4b472bf00";
-    const gos = () => ui(`[...document.querySelectorAll('#alerts [data-goto]')].map(b => ({ id: b.dataset.goto, text: b.textContent, inBar: !!b.closest('button.alert') }))`);
-    await setWatch({ watching: 3, alerts: [mkAlert("job_g1@90", { url: JOBURL }), mkAlert("job_g2@90", { url: "https://evil.example.com/steal" }), mkAlert("job_g3@90", { url: "javascript:alert(1)" })] }); await wait(2600);
+    const gos = () => ui(`[...document.querySelectorAll('#alerts [data-goto]')].map(b => ({ id: b.dataset.goto, text: b.textContent }))`);
+    await setWatch({ watching: 1, alerts: [mkAlert("job_g1@90", { url: JOBURL })], completed: [mkDone("job_g5#1", { url: JOBURL })] }); await wait(2600);
     let g = await gos();
-    check("GJ1 only the bar with a safe Housecall Pro link gets a 'Go to job' button (off-site and javascript: links get none), and it is not inside the dismiss button", g.length === 1 && g[0].id === "job_g1@90" && g[0].text === "Go to job" && !g[0].inBar && (await bars()).length === 3, JSON.stringify(g));
+    check("GJ1 no bar gets a Go to job button, even with a Housecall Pro link; the bars still show", g.length === 0 && (await bars()).length >= 1 && (await doneBarsSimple()).includes("job_g5#1"), JSON.stringify(g));
     opened.length = 0;
-    await ui("document.querySelector('[data-goto=\"job_g1@90\"]').click()"); await wait(600);
-    check("GJ2 clicking it opens that ticket in the real browser", opened.length === 1 && opened[0] === JOBURL, JSON.stringify(opened));
-    check("GJ3 ...and does NOT dismiss the bar", (await bars()).some((b) => b.id === "job_g1@90") && !store().jobWatchDismissed["job_g1@90"], JSON.stringify(store().jobWatchDismissed));
-    opened.length = 0;
-    const spoof = await ui(`Promise.all([window.overwatch.openJobWatchJob('job_g2@90'), window.overwatch.openJobWatchJob('job_nope'), window.overwatch.openJobWatchJob('https://evil.example.com/'), window.overwatch.openJobWatchJob(5)])`);
-    check("GJ5 asking for an off-site, unknown or made-up id opens nothing", opened.length === 0 && spoof.every((r) => r.ok === false), JSON.stringify([opened, spoof]));
-    await setWatch({ watching: 1, alerts: [mkAlert("job_g4@90", { url: "http://pro.housecallpro.com/x" })], completed: [mkDone("job_g5#1", { url: JOBURL })] }); await wait(2600);
-    g = await gos(); opened.length = 0;
-    await ui(`document.querySelector('[data-goto="job_g5#1"]').click()`); await wait(600);
-    check("GJ4 the green finished-job bar works the same way (and a plain http link gets no button)", g.length === 1 && g[0].id === "job_g5#1" && opened.length === 1 && opened[0] === JOBURL && (await doneBarsSimple()).includes("job_g5#1"), JSON.stringify([g, opened]));
+    const spoof = await ui(`Promise.all([window.overwatch.openJobWatchJob('job_nope'), window.overwatch.openJobWatchJob('https://evil.example.com/'), window.overwatch.openJobWatchJob(5)])`);
+    check("GJ5 asking for an unknown or made-up id opens nothing", opened.length === 0 && spoof.every((r) => r.ok === false), JSON.stringify([opened, spoof]));
     await setWatch({ watching: 0, alerts: [], completed: [] }); await wait(2600);
 
-    // ---------- 1b3. ESTIMATES: a waiting bar and a "tech finished an estimate" bar, both with Go to estimate ----------
+    // ---------- 1b3. ESTIMATES: a waiting bar and a "tech finished an estimate" bar ----------
     const EST1 = "https://pro.housecallpro.com/app/estimates/csr_" + "2".repeat(32), EST2 = "https://pro.housecallpro.com/app/estimates/csr_" + "1".repeat(32);
     await setWatch({ watching: 0, alerts: [mkAlert("csr_w1@3d", { kind: "estimate", label: "Estimate #8802 ($990)", techs: ["Blake Tech"], startedLabel: "Oct 8", minutesOnJob: 4 * 1440, limitMinutes: 3 * 1440, startedAt: new Date(Date.now() - 4 * 86400000).toISOString(), url: EST1 })], completed: [mkDone("csr_f1#9", { kind: "estimate", label: "Estimate #8801", notes: ["Steel Back: $1,500"], url: EST2 })] }); await wait(2600);
     const eb = await bars();
@@ -149,11 +141,7 @@ const finish = async (code = 0) => { try { await session.defaultSession.cookies.
     const ed = await doneBarsSimple();
     check("ES2 a finished estimate is a green bar, with the options and amounts as its notes", ed.join() === "csr_f1#9" && (await ui("document.querySelector('#alerts .alert.done .alert-notes').textContent")) === "Steel Back: $1,500" && (await ui("document.querySelector('#alerts .alert.done .alert-title').textContent")) === 'Alex Tech finished "Estimate #8801"', JSON.stringify([ed, eb]));
     g = await gos();
-    check("ES3 both carry a button that says Go to ESTIMATE (not Go to job)", g.length === 2 && g.every((x) => x.text === "Go to estimate" && !x.inBar), JSON.stringify(g));
-    opened.length = 0;
-    await ui(`document.querySelector('[data-goto="csr_w1@3d"]').click()`); await wait(600);
-    await ui(`document.querySelector('[data-goto="csr_f1#9"]').click()`); await wait(600);
-    check("ES4 each opens its own estimate in the real browser, and neither bar is dismissed", opened.length === 2 && opened[0] === EST1 && opened[1] === EST2 && (await bars()).length === 2 && !store().jobWatchDismissed["csr_w1@3d"], JSON.stringify([opened, store().jobWatchDismissed]));
+    check("ES3 no Go to estimate buttons; the estimate number is in the title to look up", g.length === 0 && /Estimate #8802/.test(eb[0].title), JSON.stringify(g));
     await ui("document.querySelector('#alerts .alert').click()"); await wait(500);
     check("ES5 clicking the bar itself still dismisses it (and remembers)", (await bars()).length === 1 && typeof store().jobWatchDismissed["csr_w1@3d"] === "number", JSON.stringify(store().jobWatchDismissed));
     await setWatch({ watching: 0, alerts: [], completed: [] }); await wait(2600);
