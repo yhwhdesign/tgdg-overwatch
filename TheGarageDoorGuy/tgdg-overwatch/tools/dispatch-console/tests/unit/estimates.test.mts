@@ -1,5 +1,5 @@
 // @ts-nocheck
-import { evaluateEstimates, buildReport, readEstimateRules, estimateUrl, outcomeOf, valueCents, hasAllTags, madeInField, readRecentEstimates, readEstimatesSince, getEstimateWatch, getEstimateReport, resetEstimateCaches, DEFAULT_ESTIMATE_RULES, type HcpEstimate, type EstimateApi } from "../../src/lib/estimates.ts";
+import { evaluateEstimates, buildReport, readEstimateRules, estimateUrl, outcomeOf, valueCents, hasAllTags, madeInField, readRecentEstimates, readEstimatesSince, getEstimateWatch, getEstimateReport, resetEstimateCaches, estimateFingerprint, mergeReviews, reviewLogCsv, REVIEW_CSV_HEADERS, DEFAULT_ESTIMATE_RULES, type HcpEstimate, type EstimateApi, type ReviewRecord } from "../../src/lib/estimates.ts";
 
 let passes = 0, failures = 0;
 const check = (name: string, ok: boolean, detail = "") => { if (ok) passes++; else { failures++; console.log(`FAIL ${name}${detail ? "  <- " + detail : ""}`); } };
@@ -176,6 +176,51 @@ eq("G10 a failed read throws (the route turns it into a message) and is not cach
 api = mkApi([est()]);
 await getEstimateWatch({ ...ctx, api });
 eq("G11 the next read after a failure works", api.counter.calls, 1);
+
+
+// ===== H. review: fingerprint, merge (needs-review + changed-since), CSV
+{
+  const base = est({ work_status: "scheduled", options: [opt({ approval_status: null, total_amount: 125000 })] });
+  const fp = estimateFingerprint(base);
+  eq("H1 fingerprint is a short stable string", typeof fp === "string" && fp.length > 0 && fp.length <= 32 && estimateFingerprint(base) === fp, true);
+  eq("H2 option order does not change the fingerprint", estimateFingerprint(est({ options: [opt({ id: "a", total_amount: 1 }), opt({ id: "b", total_amount: 2 })] })), estimateFingerprint(est({ options: [opt({ id: "b", total_amount: 2 }), opt({ id: "a", total_amount: 1 })] })));
+  eq("H3 an approval or amount change moves the fingerprint", [
+    estimateFingerprint(est({ work_status: "scheduled", options: [opt({ approval_status: "approved" })] })) !== fp,
+    estimateFingerprint(est({ work_status: "scheduled", options: [opt({ total_amount: 999 })] })) !== fp,
+    estimateFingerprint(est({ work_status: "created job from estimate", options: [opt({ approval_status: null, total_amount: 125000 })] })) !== fp,
+  ], [true, true, true]);
+
+  // merge: three estimates on the list, one reviewed-and-unchanged, one reviewed-but-changed, one never reviewed
+  const r1 = est({ estimate_number: "2001", work_status: "scheduled", options: [opt({ approval_status: null, total_amount: 100000 })] });
+  const r2 = est({ estimate_number: "2002", work_status: "scheduled", options: [opt({ approval_status: null, total_amount: 200000 })] });
+  const r3 = est({ estimate_number: "2003", work_status: "scheduled", options: [opt({ approval_status: null, total_amount: 300000 })] });
+  const report = buildReport([r1, r2, r3], NOW, R, TZ);
+  eq("H4 every list row carries a fingerprint", report.list.every((x) => typeof x.fingerprint === "string" && x.fingerprint.length > 0), true);
+  const fpOf = (id: string) => report.list.find((x) => x.id === id)!.fingerprint;
+  const reviews: Record<string, ReviewRecord> = {
+    [r1.id]: { reviewedBy: "Jasen", reviewedAt: "2026-10-18T20:00:00Z", note: "called customer", reviewedFingerprint: fpOf(r1.id) },        // unchanged since
+    [r2.id]: { reviewedBy: "Dana", reviewedAt: "2026-10-17T20:00:00Z", note: null, reviewedFingerprint: "stale-xxxxx" },                    // changed since
+  };
+  const merged = mergeReviews(report.list, reviews, TZ);
+  const m = (id: string) => merged.rows.find((x) => x.id === id)!;
+  eq("H5 reviewed + unchanged: not on needs-review, carries who/when/note", [m(r1.id).reviewed, m(r1.id).needsReview, m(r1.id).changedSinceReview, m(r1.id).reviewedBy, m(r1.id).note, !!m(r1.id).reviewedAtLabel], [true, false, false, "Jasen", "called customer", true]);
+  eq("H6 reviewed but changed: back on needs-review, flagged changed", [m(r2.id).reviewed, m(r2.id).needsReview, m(r2.id).changedSinceReview, m(r2.id).reviewedBy], [true, true, true, "Dana"]);
+  eq("H7 never reviewed: needs review", [m(r3.id).reviewed, m(r3.id).needsReview, m(r3.id).reviewedBy], [false, true, null]);
+  eq("H8 needs-review count = untouched + changed", merged.needsReviewCount, 2);
+  eq("H9 no reviews at all: everything needs review", mergeReviews(report.list, {}, TZ).needsReviewCount, 3);
+
+  // CSV
+  const csv = reviewLogCsv(merged.rows);
+  const lines = csv.split("\r\n");
+  eq("H10 CSV header matches", lines[0], REVIEW_CSV_HEADERS.map((h) => `"${h}"`).join(","));
+  eq("H11 one row per estimate", lines.length, report.list.length + 1);
+  const row1 = lines.find((l) => l.includes('"2001"'))!;
+  eq("H12 reviewed row shows Yes / by / note", row1.includes('"Yes"') && row1.includes('"Jasen"') && row1.includes('"called customer"'), true);
+  const row2 = lines.find((l) => l.includes('"2002"'))!;
+  eq("H13 a changed-since row is marked", row2.includes('"Changed since reviewed"') === false && row2.split('","').some((c) => c === "Yes") , true);
+  eq("H14 a formula-looking note is defused so a spreadsheet won't run it", reviewLogCsv([{ ...merged.rows[0], note: "=SUM(A1:A9)" }]).includes(`"'=SUM(A1:A9)"`), true);
+  eq("H15 quotes and commas in a note are escaped", reviewLogCsv([{ ...merged.rows[0], note: 'he said "ok, soon"' }]).includes('"he said ""ok, soon"""'), true);
+}
 
 console.log(`\n${passes} passed, ${failures} failed`);
 process.exit(failures ? 1 : 0);
