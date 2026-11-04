@@ -313,6 +313,9 @@ export interface EstimateRow {
   options: number;
   customer: string | null;
   url: string | null;
+  /** A short, stable snapshot of the estimate's state at read time. Compared with the reviewed snapshot to tell
+   *  whether the estimate has changed since a dispatcher last looked at it. */
+  fingerprint: string;
 }
 
 export interface Tally {
@@ -405,6 +408,7 @@ export function buildReport(estimates: HcpEstimate[], now: Date, rules: Estimate
         options: liveOptions(e).length,
         customer: rules.showCustomer ? customer || null : null,
         url: estimateUrl(rules.urlTemplate, e.id),
+        fingerprint: estimateFingerprint(e),
       });
     }
   }
@@ -412,6 +416,132 @@ export function buildReport(estimates: HcpEstimate[], now: Date, rules: Estimate
   const sortedMonths = [...months.entries()].sort((a, b) => (a[0] < b[0] ? 1 : -1)).map(([key, tally]) => ({ key, tally: finish(tally) }));
   const sortedTechs = [...techs.entries()].sort((a, b) => b[1].total - a[1].total).map(([key, tally]) => ({ key, tally: finish(tally) }));
   return { from, to: today, listTags: rules.listTags, list: list.slice(0, 500), listTally: finish(listTally), byMonth: sortedMonths, byTech: sortedTechs, allTally: finish(allTally) };
+}
+
+// ---- review state (our own: marked reviewed, by whom, when, with a note) ---------------------------------
+
+/** A short, order-independent hash (djb2) of a string. Enough to notice when an estimate's state changes. */
+function shortHash(input: string): string {
+  let h = 5381;
+  for (let i = 0; i < input.length; i++) h = ((h << 5) + h + input.charCodeAt(i)) | 0;
+  return (h >>> 0).toString(36);
+}
+
+/**
+ * A snapshot of the parts of an estimate worth re-reviewing when they change: its overall outcome, its work status,
+ * and each live option's approval status and amount. Not the whole estimate, so a cosmetic edit does not re-flag it.
+ */
+export function estimateFingerprint(e: HcpEstimate): string {
+  const opts = liveOptions(e)
+    .map((o) => `${lower(o.approval_status)}|${lower(o.status)}|${cents(o.total_amount)}`)
+    .sort();
+  return shortHash(`${outcomeOf(e)}#${lower(e.work_status)}#${opts.length}#${opts.join(";")}`);
+}
+
+/** One stored review, as the database holds it. */
+export interface ReviewRecord {
+  reviewedBy: string;
+  reviewedAt: string;
+  note: string | null;
+  reviewedFingerprint: string;
+}
+
+/** A list row with its review state merged in. */
+export interface ReviewedRow extends EstimateRow {
+  reviewed: boolean;
+  reviewedBy: string | null;
+  reviewedAt: string | null;
+  reviewedAtLabel: string | null;
+  note: string | null;
+  /** Reviewed once, but the estimate has changed since; it comes back onto the Needs-review list. */
+  changedSinceReview: boolean;
+  /** Never reviewed, or changed since it was. */
+  needsReview: boolean;
+}
+
+function reviewedLabel(iso: string, timeZone: string): string {
+  const d = parseTime(iso);
+  if (!d) return "";
+  return `${dateLabel(d, timeZone)}, ${clockLabel(d, timeZone)}`;
+}
+
+/** Merge stored reviews onto the list rows. Kept separate from buildReport so review marks show at once,
+ *  without waiting for the ten-minute Housecall Pro cache. */
+export function mergeReviews(
+  rows: EstimateRow[],
+  reviews: Record<string, ReviewRecord>,
+  timeZone: string
+): { rows: ReviewedRow[]; needsReviewCount: number } {
+  let needsReviewCount = 0;
+  const merged = rows.map((row) => {
+    const r = reviews[row.id];
+    if (!r) {
+      needsReviewCount++;
+      return { ...row, reviewed: false, reviewedBy: null, reviewedAt: null, reviewedAtLabel: null, note: null, changedSinceReview: false, needsReview: true };
+    }
+    const changedSinceReview = r.reviewedFingerprint !== row.fingerprint;
+    if (changedSinceReview) needsReviewCount++;
+    return {
+      ...row,
+      reviewed: true,
+      reviewedBy: r.reviewedBy,
+      reviewedAt: r.reviewedAt,
+      reviewedAtLabel: reviewedLabel(r.reviewedAt, timeZone),
+      note: r.note,
+      changedSinceReview,
+      needsReview: changedSinceReview,
+    };
+  });
+  return { rows: merged, needsReviewCount };
+}
+
+// ---- export (CSV; the browser turns it into a Google Sheet, Excel sheet or, via print, a PDF) ------------
+
+/** One CSV field, quoted and escaped so commas, quotes and newlines are safe. A leading =,+,-,@ is prefixed with
+ *  a quote so a spreadsheet never treats a note as a formula. */
+function csvField(value: string | number | null | undefined): string {
+  let v = value == null ? "" : String(value);
+  if (/^[=+\-@]/.test(v)) v = `'${v}`;
+  return `"${v.replace(/"/g, '""')}"`;
+}
+
+export const REVIEW_CSV_HEADERS = [
+  "Estimate #",
+  "Created",
+  "Technician",
+  "Amount",
+  "Outcome",
+  "Reviewed",
+  "Reviewed by",
+  "Reviewed at",
+  "Changed since reviewed",
+  "Note",
+];
+
+const OUTCOME_WORD: Record<Outcome, string> = { won: "Won", open: "Waiting", declined: "Declined", expired: "Expired", canceled: "Canceled" };
+
+/** The review log as CSV text. One row per estimate on the list, with who reviewed it, when, and the note. */
+export function reviewLogCsv(rows: ReviewedRow[]): string {
+  const lines = [REVIEW_CSV_HEADERS.map(csvField).join(",")];
+  for (const r of rows) {
+    lines.push(
+      [
+        r.number || "",
+        r.createdLabel,
+        r.techs.join(", "),
+        `$${Math.round(r.amountCents / 100)}`,
+        OUTCOME_WORD[r.outcome],
+        r.reviewed ? "Yes" : "No",
+        r.reviewedBy ?? "",
+        r.reviewedAtLabel ?? "",
+        r.changedSinceReview ? "Yes" : "",
+        r.note ?? "",
+      ]
+        .map(csvField)
+        .join(",")
+    );
+  }
+  return lines.join("\r\n");
 }
 
 // ---- asking Housecall Pro (read-only, cached) ---------------------------------------------------------

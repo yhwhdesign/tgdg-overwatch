@@ -57,6 +57,7 @@ const suites = [
   ["server", "offered-technicians-route.test.cjs"],
   ["server", "orders-routes.test.cjs"],
   ["server", "reports-route.test.cjs"],
+  ["server", "estimate-reviews-route.test.cjs"],
   ["server", "hcp-sync-route.test.cjs"],
   ["server", "refresh-and-status.test.cjs"],
   ["server", "admin-session-route.test.cjs"],
